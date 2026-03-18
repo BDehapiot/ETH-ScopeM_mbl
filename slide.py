@@ -60,7 +60,7 @@ if __name__ == "__main__":
 
     # Parameters
     path = data_path / file_name
-    channels = "all"
+    channels = "DAPI"
     level = 5
     view = 1
     
