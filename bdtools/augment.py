@@ -181,7 +181,7 @@ def augment(
     imgs = imgs.astype("float32")
     idxs = np.random.choice(
         np.arange(0, imgs.shape[0]), size=iterations)
-    
+
     outputs = Parallel(n_jobs=-1, backend="threading")(
         delayed(_augment)(imgs[i], msks[i])
         for i in idxs

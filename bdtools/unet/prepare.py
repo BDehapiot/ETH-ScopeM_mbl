@@ -3,7 +3,7 @@
 import numpy as np
 
 # bdtools
-from bdtools.patch import get_patches
+from bdtools.patch import extract_patches
 from bdtools.mask import process_masks
 from bdtools.augment import augment
 
@@ -40,7 +40,8 @@ class Prepare:
         self.y = process_masks(self.y, method=self.mask_method)
         if isinstance(self.y, list):
             self.y = [
-                arr.astype("float32") if not np.issubdtype(arr.dtype, np.floating) 
+                arr.astype("float32") 
+                if not np.issubdtype(arr.dtype, np.floating) 
                 else arr for arr in self.y
                 ]
         if isinstance(self.y, np.ndarray):
@@ -52,21 +53,21 @@ class Prepare:
         if isinstance(self.X, list):
             self.X_patches, self.y_patches = [], []
             for arr_X, arr_y in zip(self.X, self.y):
-                X_patches = get_patches(
+                X_patches = extract_patches(
                     arr_X, self.patch_size, self.patch_overlap, 
                     multichannel=multichannel
                     )
-                y_patches = get_patches(
+                y_patches = extract_patches(
                     arr_y, self.patch_size, self.patch_overlap)
                 self.X_patches += X_patches
                 self.y_patches += y_patches
         if isinstance(self.X, np.ndarray):
-            self.X_patches = get_patches(
+            self.X_patches = extract_patches(
                 self.X, self.patch_size, self.patch_overlap, 
                 multichannel=multichannel
                 )
             if self.y is not None: 
-                self.y_patches = get_patches(
+                self.y_patches = extract_patches(
                     self.y, self.patch_size, self.patch_overlap)
         self.X_patches = np.stack(self.X_patches)
         self.y_patches = np.stack(self.y_patches)
