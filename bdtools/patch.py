@@ -6,7 +6,7 @@ import numpy as np
 # Scipy
 from scipy.ndimage import distance_transform_edt
 
-#%% Function: get_patches() -----------------------------------------------
+#%% Function: get_patches() ---------------------------------------------------
 
 def get_patches(arr, size, overlap, multichannel=False):
     

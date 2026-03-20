@@ -13,7 +13,7 @@ from bdtools.norm import norm_pct
 
 #%% Inputs --------------------------------------------------------------------
 
-parameters = {
+main_parameters = {
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
@@ -23,7 +23,7 @@ parameters = {
         
     }
 
-#%% Class(Main) ------------------------------------------------------------
+#%% Class(Main) ---------------------------------------------------------------
 
 class Main:
     def __init__(self, parameters=None):
@@ -35,7 +35,7 @@ class Main:
         # Run
         self.initialize()
         
-#%% Class(Main) : initialize() ---------------------------------------------
+#%% Class(Main) : initialize() ------------------------------------------------
 
     def initialize(self):
         
@@ -46,13 +46,11 @@ class Main:
             for path in self.slide_paths
             ]
 
-        # load/save metadata & preview
+        # Extract data
         self.metadata_paths = []
         self.preview_paths = []
         self.dapi_paths = []
         for p, path in enumerate(self.slide_paths): 
-            
-            print(f"initialize() : {path.name}")
             
             output_path = self.output_paths[p]
             metadata_path = output_path / "metadata.pkl"
@@ -60,9 +58,12 @@ class Main:
             self.metadata_paths.append(metadata_path)
             self.preview_paths.append(preview_path)
             
+            # Setup output directory
             if not output_path.exists():
+                print(f"initialize() : {path.name}")
                 output_path.mkdir(parents=True, exist_ok=True) 
             
+            # Metadata
             if not metadata_path.exists():
                 metadata = load_metadata(path)
                 with open(metadata_path, "wb") as file:
@@ -71,6 +72,7 @@ class Main:
                 with open(metadata_path, "rb") as file:
                     metadata = pickle.load(file)
                 
+            # Preview
             if not preview_path.exists():
                 preview = load_arr(
                     path, metadata=metadata, 
@@ -79,7 +81,8 @@ class Main:
                 preview = np.mean(preview, axis=0)
                 preview = (norm_pct(preview) * 255).astype("uint8")
                 io.imsave(preview_path, preview, check_contrast=False)
-                
+               
+            # DAPI
             for idx in range(len(metadata["roi"])):
                 dapi_path = output_path / f"dapi_{idx:02d}.tif"
                 self.dapi_paths.append(dapi_path)
@@ -94,5 +97,5 @@ class Main:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=parameters)
+    main = Main(parameters=main_parameters)
     

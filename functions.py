@@ -48,7 +48,7 @@ def load_metadata(path):
                 
                 roi = []
                 for level in metadata["level"]:
-                    pad = 256 / 2 ** level
+                    pad = 512 / 2 ** level
                     y0s = (y0 / 2 ** level) - pad
                     y1s = (y1 / 2 ** level) + pad
                     x0s = (x0 / 2 ** level) - pad
