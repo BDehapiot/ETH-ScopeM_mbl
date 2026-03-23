@@ -89,26 +89,26 @@ class UNet:
         self.get_parameters()
         Prepare(self)
         
-        self.callbacks = [CallBacks(self)]
+        # self.callbacks = [CallBacks(self)]
         
-        try:
+        # try:
         
-            # Train
-            self.history = self.model.fit(
-                x=self.X_trn, y=self.y_trn,
-                validation_data=(self.X_val, self.y_val),
-                batch_size=self.batch_size,
-                epochs=self.epochs,
-                callbacks=self.callbacks,
-                verbose=0,
-                )
+        #     # Train
+        #     self.history = self.model.fit(
+        #         x=self.X_trn, y=self.y_trn,
+        #         validation_data=(self.X_val, self.y_val),
+        #         batch_size=self.batch_size,
+        #         epochs=self.epochs,
+        #         callbacks=self.callbacks,
+        #         verbose=0,
+        #         )
         
-        # Interrupt
-        except KeyboardInterrupt:
-            print("Training interrupted.")
-            self.model.stop_training = True
-            for cb in self.callbacks:
-                cb.on_train_end(logs={})
+        # # Interrupt
+        # except KeyboardInterrupt:
+        #     print("Training interrupted.")
+        #     self.model.stop_training = True
+        #     for cb in self.callbacks:
+        #         cb.on_train_end(logs={})
 
 #%% Class(Unet) predict() -----------------------------------------------------
 

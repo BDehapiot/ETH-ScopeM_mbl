@@ -188,7 +188,7 @@ class CallBacks(Callback):
         nS = self.X_val.shape[0]
         nY = self.X_val.shape[1]
         nX = self.X_val.shape[2]
-        max_size = ((max_mb * 2**20) / (nY * nX)) / 4 
+        max_size = ((max_mb * 2 ** 20) / (nY * nX)) / 4 
         max_size = np.floor(max_size).astype(int)
         size = np.min([max_img, max_size, nS])
         

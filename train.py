@@ -54,7 +54,7 @@ train_parameters = {
     "mask_method"        : "binary",
             
     # Augment
-    "augment_iterations" : 100,
+    "augment_iterations" : 256,
     "augment_invert_p"   : 0,
     "augment_gamma_p"    : 0.5,
     "augment_gblur_p"    : 0.5,
@@ -140,8 +140,14 @@ class Train:
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     train = Train(main, parameters=train_parameters)
-    msks = train.msks    
-    imgs = train.imgs
+    # msks = train.msks    
+    # imgs = train.imgs
+    # X_val = train.unet.X_val
+    
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(np.stack(X_val))
     
     # # Display
     # import napari
