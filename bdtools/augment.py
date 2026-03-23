@@ -103,6 +103,8 @@ def augment(
     
     def _gamma(img, gamma=1.0):
         img_mean = np.mean(img)
+        if img_mean == 0:
+            return img
         img = adjust_gamma(img, gamma=gamma)
         img = img * (img_mean / np.mean(img))
         return img
