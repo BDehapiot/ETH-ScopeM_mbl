@@ -33,7 +33,7 @@ train_parameters = {
     
     # Paths
     "root_path"          : None,
-    "model_name"         : "model_256_edt_512-28",
+    "model_name"         : None,
 
     # Build
     "input_shape"        : (None, None, 1),
@@ -51,7 +51,7 @@ train_parameters = {
     # Prepare
     "patch_size"         : 256,
     "patch_overlap"      : 0,
-    "mask_method"        : "edt",
+    "mask_method"        : "outlines",
             
     # Augment
     "augment_iterations" : 512,
@@ -129,48 +129,14 @@ class Train:
         # Setup model
         self.unet = UNet(parameters=self.parameters, model_path=None)
         
-        # # Train model
-        # self.unet.train(imgs, msks)
+        # Train model
+        self.unet.train(imgs, msks)
             
         self.msks = msks
         self.imgs = imgs
-        
-#%% Class(Predict) predict() --------------------------------------------------
 
-    def predict(self, X):
-        pass
-        
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     train = Train(main, parameters=train_parameters)
-    
-    # -------------------------------------------------------------------------
-        
-    dapi_path = Path("D:\local_mbl\data\\251126_D7_S2\dapi_00.tif")
-    dapi = io.imread(dapi_path).squeeze()
-    dapi = dapi.astype("float32") / 255
-    prd = train.unet.predict(dapi)
-    
-    # Display
-    import napari
-    vwr = napari.Viewer()
-    vwr.add_image(dapi)
-    vwr.add_image(prd, blending="additive", colormap="inferno")
-    
-    # msks = train.msks    
-    # imgs = train.imgs
-    # X_trn = train.unet.X_trn
-    # y_trn = train.unet.y_trn
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(np.stack(X_val))
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(np.stack(imgs))
-    # vwr.add_image(np.stack(msks))

@@ -134,7 +134,7 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
                     channel, level=level,
                     ))
                 
-    return np.stack(arr)
+    return np.stack(arr).squeeze()
         
 #%% Execute -------------------------------------------------------------------
 
