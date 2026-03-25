@@ -10,7 +10,7 @@ from skimage.measure import label, regionprops
 from skimage.filters import gaussian, threshold_otsu
 from skimage.morphology import disk, binary_closing, remove_small_objects
         
-#%% function(s) : load metadata & data ----------------------------------------
+#%% function(s) : extract() ---------------------------------------------------
         
 def load_metadata(path):
 
@@ -135,7 +135,11 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
                     ))
                 
     return np.stack(arr).squeeze()
-        
+
+#%% function(s) : process() ---------------------------------------------------
+
+
+
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
