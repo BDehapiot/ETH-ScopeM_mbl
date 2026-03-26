@@ -11,7 +11,6 @@ from pathlib import Path
 # functions
 from functions import (
     load_metadata, load_arr,
-    
     )
 
 # bdtools
@@ -35,16 +34,16 @@ main_parameters = {
         ],
     
     # Paths
-    "data_path"     : Path("D:\local_mbl\data"),
-    "model_name"    : "model_256_edt_512-28",
+    "data_path"       : Path("D:\local_mbl\data"),
+    "load_model_name" : "model_256_edt_1024-52",
 
     # extract()
-    "preview_level" : 4,
+    "preview_level"   : 4,
     
     # process()
-    "process_level" : 1,
-    "thresh_0"      : 0.25,
-    "thresh_1"      : 0.50,
+    "process_level"   : 1,
+    "thresh_0"        : 0.25,
+    "thresh_1"        : 0.50,
         
     }
 
@@ -83,7 +82,7 @@ class Main:
 
     def extract(self):
         
-        self.view_paths = [] 
+        self.vws_paths = [] 
         for p, path in enumerate(self.qpt_paths): 
             sld_path = self.sld_paths[p]
             mtd_path = sld_path / "metadata.pkl"
@@ -113,23 +112,23 @@ class Main:
             for idx in range(len(mtd["roi"])):
                 
                 # Setup view directory
-                view_path = sld_path / f"view_{idx:02d}"
-                self.view_paths.append(view_path)
-                if not view_path.exists():
-                    view_path.mkdir(parents=True, exist_ok=True) 
+                vws_path = sld_path / f"view_{idx:02d}"
+                self.vws_paths.append(vws_path)
+                if not vws_path.exists():
+                    vws_path.mkdir(parents=True, exist_ok=True) 
                 
                 # DAPI at level 0 (for predictions)
-                dapi_path = view_path / "dapi_level-0.tif"
-                if not dapi_path.exists():
-                    dapi = load_arr(
+                dap_path = vws_path / "dapi_level-0.tif"
+                if not dap_path.exists():
+                    dap = load_arr(
                         path, metadata=mtd, 
                         channels="DAPI", level=0, roi_idx=idx,
                         )
-                    dapi = (norm_pct(dapi) * 255).astype("uint8")
-                    io.imsave(dapi_path, dapi, check_contrast=False)
+                    dap = (norm_pct(dap) * 255).astype("uint8")
+                    io.imsave(dap_path, dap, check_contrast=False)
                     
                 # Stack at process level 
-                stk_path = view_path / f"stack_level-{self.process_level}.tif"
+                stk_path = vws_path / f"stack_level-{self.process_level}.tif"
                 if not stk_path.exists():
                     stk = load_arr(
                         path, metadata=mtd, 
@@ -142,7 +141,7 @@ class Main:
 
     def process(self):
 
-        for p, path in enumerate(self.view_paths):
+        for p, path in enumerate(self.vws_paths):
             dap_path = path / "dapi_level-0.tif"
             msk_path = path / f"mask_level-{self.process_level}.tif"
 
@@ -151,7 +150,9 @@ class Main:
                 
                 if "unet" not in locals():
                     unet = UNet(
-                        parameters=None, model_path=Path.cwd() / self.model_name)
+                        parameters=None, 
+                        model_path=Path.cwd() / self.load_model_name
+                        )
                 
                 dap = io.imread(dap_path)
                 dap = dap.astype("float32") / 255
@@ -219,9 +220,9 @@ if __name__ == "__main__":
 
     view_idx = 0
     channels = main_parameters["channels"]
-    distance = 1 * (2 ** main.process_level) ** 2
-    msk_path = main.view_paths[view_idx] / f"mask_level-{main.process_level}.tif"
-    stk_path = main.view_paths[view_idx] / f"stack_level-{main.process_level}.tif"
+    distance = 3 * (2 ** main.process_level) ** 2
+    msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
+    stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
     
     msk = io.imread(msk_path)
     stk = io.imread(stk_path)

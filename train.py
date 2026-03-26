@@ -33,7 +33,7 @@ train_parameters = {
     
     # Paths
     "root_path"          : None,
-    "model_name"         : None,
+    "model_name"         : "model_256_edt_1024-52",
 
     # Build
     "input_shape"        : (None, None, 1),
@@ -51,10 +51,10 @@ train_parameters = {
     # Prepare
     "patch_size"         : 256,
     "patch_overlap"      : 0,
-    "mask_method"        : "outlines",
+    "mask_method"        : "edt",
             
     # Augment
-    "augment_iterations" : 512,
+    "augment_iterations" : 1024,
     "augment_invert_p"   : 0,
     "augment_gamma_p"    : 0.5,
     "augment_gblur_p"    : 0.5,
@@ -127,7 +127,11 @@ class Train:
         imgs = imgs.astype("float32") / 255
             
         # Setup model
-        self.unet = UNet(parameters=self.parameters, model_path=None)
+        if self.model_name is not None:
+            model_path = Path.cwd() / self.model_name
+            self.unet = UNet(parameters=None, model_path=model_path)
+        else:
+            self.unet = UNet(parameters=self.parameters, model_path=None)
         
         # Train model
         self.unet.train(imgs, msks)
