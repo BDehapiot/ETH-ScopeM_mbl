@@ -223,44 +223,156 @@ if __name__ == "__main__":
     distance = 3 * (2 ** main.process_level) ** 2
     msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
     stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
-    
     msk = io.imread(msk_path)
     stk = io.imread(stk_path)
     
     # -------------------------------------------------------------------------
 
     t0 = time.time()
-    print("expand_labels() : ", end="", flush=False)
-    
-    msk = expand_labels(label(msk), distance=distance)
+    print("regionprops_table() : ", end="", flush=False)
+
+    results = regionprops_table(
+        label(msk), properties=("label", "centroid"),
+        )
     
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
+    
+    results["y"] = results.pop("centroid-0")
+    results["x"] = results.pop("centroid-1")
+    
+#%%
+            
+    def get_crops(stk, y_coords, x_coords, crop_size=32):
+
+        y_coords = y_coords.astype("int32")
+        x_coords = x_coords.astype("int32")
+        
+        # Normalize (0 to 1)
+        if np.issubdtype(stk.dtype, np.integer):
+            for i, img in enumerate(stk):
+                stk[i] = norm_pct(img)
+        
+        # Pad (acc. to crop half size)
+        chs = crop_size // 2 # crop half size
+        pad_width = ((0, 0), (chs, chs), (chs, chs))
+        stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+
+        # Extract crops
+        crops = []
+        for (y, x) in zip(y_coords, x_coords):
+            y0 = y; y1 = y + crop_size
+            x0 = x; x1 = x + crop_size
+            if y1 - y0 != crop_size:
+                print(y0, y1)
+            if x1 - x0 != crop_size:
+                print(x0, x1)
+            crops.append(
+                np.swapaxes(stk[..., y0:y1, x0:x1], 0, -1)
+                )
+            
+        return np.stack(crops)
     
     # -------------------------------------------------------------------------
     
     t0 = time.time()
-    print("regionprops_table() : ", end="", flush=False)
-
-    results = regionprops_table(
-        msk, intensity_image=np.moveaxis(stk, 0, -1), 
-        properties=("label", "intensity_mean"),
-        )
-    results.pop("label", None)
-    results = {
-        channel : value 
-        for channel, value in zip(channels, results.values())
-        }
-    results = pd.DataFrame(results)
-    results.to_csv(Path.cwd() / "results.csv", index=False)
+    print("get_crops() : ", end="", flush=False)
+    
+    crops = get_crops(stk, results["y"], results["x"], crop_size=32)
     
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
+        
+#%%
+
+    import tensorflow as tf
+    from tensorflow.keras import layers, Model
+        
+    def build_autoencoder(crop_size, n_channels, latent_dim=64):
+        """
+        Builds and compiles a Convolutional Autoencoder.
+        
+        Returns:
+            encoder: Model used to compress images into latent vectors.
+            decoder: Model used to reconstruct images from latent vectors.
+            autoencoder: The full compiled model for training.
+        """
+        
+        # ==========================================
+        # 1. ENCODER
+        # ==========================================
+        encoder_inputs = layers.Input(shape=(crop_size, crop_size, n_channels))
+        
+        x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(encoder_inputs)
+        x = layers.MaxPooling2D((2, 2), padding='same')(x)
+        
+        x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
+        x = layers.MaxPooling2D((2, 2), padding='same')(x)
+        
+        x = layers.Flatten()(x)
+        latent_space = layers.Dense(latent_dim, activation='relu', name='latent_features')(x)
+        
+        encoder = Model(encoder_inputs, latent_space, name='encoder')
+    
+        # ==========================================
+        # 2. DECODER
+        # ==========================================
+        decoder_inputs = layers.Input(shape=(latent_dim,))
+        
+        # Calculate the spatial dimensions before flattening
+        # Since we max-pooled twice (divided by 2 twice), the size is crop_size // 4
+        spatial_dim = crop_size // 4
+        
+        x = layers.Dense(spatial_dim * spatial_dim * 64, activation='relu')(decoder_inputs)
+        x = layers.Reshape((spatial_dim, spatial_dim, 64))(x)
+        
+        x = layers.Conv2DTranspose(64, (3, 3), activation='relu', padding='same')(x)
+        x = layers.UpSampling2D((2, 2))(x)
+        
+        x = layers.Conv2DTranspose(32, (3, 3), activation='relu', padding='same')(x)
+        x = layers.UpSampling2D((2, 2))(x)
+        
+        decoder_outputs = layers.Conv2D(n_channels, (3, 3), activation='sigmoid', padding='same')(x)
+        
+        decoder = Model(decoder_inputs, decoder_outputs, name='decoder')
+    
+        # ==========================================
+        # 3. FULL AUTOENCODER
+        # ==========================================
+        autoencoder_inputs = layers.Input(shape=(crop_size, crop_size, n_channels))
+        encoded_img = encoder(autoencoder_inputs)
+        reconstructed_img = decoder(encoded_img)
+        
+        autoencoder = Model(autoencoder_inputs, reconstructed_img, name='autoencoder')
+        autoencoder.compile(optimizer='adam', loss='mse')
+        
+        return encoder, decoder, autoencoder
+
+#%% 
+
+    crop_size  = 32      # Assuming 32x32 crops (y, x)
+    n_channels = 8       # Replace with your actual number of channels
+    latent_dim = 64      # The size of the feature vector you'll cluster later
+
+    encoder, decoder, autoencoder = build_autoencoder(
+        crop_size=crop_size, n_channels=n_channels, latent_dim=latent_dim)
     
     # -------------------------------------------------------------------------
     
-    # Display
-    import napari
+    batch_size = 256
+    train_dataset = tf.data.Dataset.from_tensor_slices((crops, crops))
+    train_dataset = train_dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
+    history = autoencoder.fit(train_dataset, epochs=5)
+    latent_vectors = encoder.predict(crops, batch_size=batch_size)
+    
+#%%
+    
+    idxs = np.random.choice(latent_vectors.shape[0], size=2000, replace=False)
+    test = latent_vectors[idxs, :]
+    
+    import napari        
     vwr = napari.Viewer()
-    vwr.add_labels(msk)
-    vwr.add_image(stk)
+    vwr.add_image(test)
+    
+    
+    

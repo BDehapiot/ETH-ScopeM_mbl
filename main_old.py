@@ -11,7 +11,6 @@ from pathlib import Path
 # functions
 from functions import (
     load_metadata, load_arr,
-    
     )
 
 # bdtools
@@ -31,19 +30,20 @@ main_parameters = {
     
     # Channels
     "channels" : [
-        "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF"],
+        "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF"
+        ],
     
     # Paths
-    "data_path"     : Path("D:\local_mbl\data"),
-    "model_name"    : "model_256_edt_512-28",
+    "data_path"       : Path("D:\local_mbl\data"),
+    "load_model_name" : "model_256_edt_1024-52",
 
     # extract()
-    "preview_level" : 4,
+    "preview_level"   : 4,
     
     # process()
-    "process_level" : 1,
-    "thresh_0"      : 0.25,
-    "thresh_1"      : 0.50,
+    "process_level"   : 1,
+    "thresh_0"        : 0.25,
+    "thresh_1"        : 0.50,
         
     }
 
@@ -60,107 +60,109 @@ class Main:
         self.initialize()
         self.extract()
         self.process()
-        self.analyse()
+        # self.analyse()
         
 #%% Class(Main) : initialize() ------------------------------------------------
 
     def initialize(self):
         
         # Paths
-        self.qptiff_paths = list(self.data_path.glob("*unmixed.qptiff"))
-        self.slide_paths = [
+        self.qpt_paths = list(self.data_path.glob("*unmixed.qptiff"))
+        self.sld_paths = [
             self.data_path / f"{path.stem[:12]}"
-            for path in self.qptiff_paths
+            for path in self.qpt_paths
             ]
        
         # Setup slide directory
-        for slide_path in self.slide_paths:
-            if not slide_path.exists():
-                slide_path.mkdir(parents=True, exist_ok=True) 
+        for sld_path in self.sld_paths:
+            if not sld_path.exists():
+                sld_path.mkdir(parents=True, exist_ok=True) 
 
 #%% Class(Main) : extract() ---------------------------------------------------
 
     def extract(self):
         
-        self.view_paths = [] 
-        for p, path in enumerate(self.qptiff_paths): 
-            slide_path    = self.slide_paths[p]
-            metadata_path = slide_path / "metadata.pkl"
-            preview_path  = slide_path / f"preview_level-{self.preview_level}.tif"
+        self.vws_paths = [] 
+        for p, path in enumerate(self.qpt_paths): 
+            sld_path = self.sld_paths[p]
+            mtd_path = sld_path / "metadata.pkl"
+            pvw_path = sld_path / f"preview_level-{self.preview_level}.tif"
             
             # Metadata
-            if not metadata_path.exists():
+            if not mtd_path.exists():
                 print(f"extract() : {path.name}")
-                metadata = load_metadata(path)
-                with open(metadata_path, "wb") as file:
-                    pickle.dump(metadata, file)
+                mtd = load_metadata(path)
+                with open(mtd_path, "wb") as file:
+                    pickle.dump(mtd, file)
             else:
-                with open(metadata_path, "rb") as file:
-                    metadata = pickle.load(file)
+                with open(mtd_path, "rb") as file:
+                    mtd = pickle.load(file)
         
             # Preview
-            if not preview_path.exists():
-                preview = load_arr(
-                    path, metadata=metadata, 
+            if not pvw_path.exists():
+                pvw = load_arr(
+                    path, metadata=mtd, 
                     channels="all", level=self.preview_level
                     )
-                preview = np.mean(preview, axis=0)
-                preview = (norm_pct(preview) * 255).astype("uint8")
-                io.imsave(preview_path, preview, check_contrast=False)
+                pvw = np.mean(pvw, axis=0)
+                pvw = (norm_pct(pvw) * 255).astype("uint8")
+                io.imsave(pvw_path, pvw, check_contrast=False)
 
             # View(s)
-            for idx in range(len(metadata["roi"])):
+            for idx in range(len(mtd["roi"])):
                 
                 # Setup view directory
-                view_path = slide_path / f"view_{idx:02d}"
-                self.view_paths.append(view_path)
-                if not view_path.exists():
-                    view_path.mkdir(parents=True, exist_ok=True) 
+                vws_path = sld_path / f"view_{idx:02d}"
+                self.vws_paths.append(vws_path)
+                if not vws_path.exists():
+                    vws_path.mkdir(parents=True, exist_ok=True) 
                 
                 # DAPI at level 0 (for predictions)
-                dapi_path = view_path / "dapi_level-0.tif"
-                if not dapi_path.exists():
-                    dapi = load_arr(
-                        path, metadata=metadata, 
+                dap_path = vws_path / "dapi_level-0.tif"
+                if not dap_path.exists():
+                    dap = load_arr(
+                        path, metadata=mtd, 
                         channels="DAPI", level=0, roi_idx=idx,
                         )
-                    dapi = (norm_pct(dapi) * 255).astype("uint8")
-                    io.imsave(dapi_path, dapi, check_contrast=False)
+                    dap = (norm_pct(dap) * 255).astype("uint8")
+                    io.imsave(dap_path, dap, check_contrast=False)
                     
                 # Stack at process level 
-                stack_path = view_path / f"stack_level-{self.process_level}.tif"
-                if not stack_path.exists():
-                    stack = load_arr(
-                        path, metadata=metadata, 
+                stk_path = vws_path / f"stack_level-{self.process_level}.tif"
+                if not stk_path.exists():
+                    stk = load_arr(
+                        path, metadata=mtd, 
                         channels="all", level=self.process_level, roi_idx=idx,
                         )
-                    stack = ((stack + 8) / 16 ).astype("uint8") # 12bits to 8bits
-                    io.imsave(stack_path, stack, check_contrast=False)                               
+                    stk = ((stk + 8) / 16 ).astype("uint8") # 12bits to 8bits
+                    io.imsave(stk_path, stk, check_contrast=False)                               
                         
 #%% Class(Main) : process() ---------------------------------------------------
 
     def process(self):
 
-        for p, path in enumerate(self.view_paths):
-            dapi_path = path / "dapi_level-0.tif"
-            msk_path  = path / f"mask_level-{self.process_level}.tif"
+        for p, path in enumerate(self.vws_paths):
+            dap_path = path / "dapi_level-0.tif"
+            msk_path = path / f"mask_level-{self.process_level}.tif"
 
             if not msk_path.exists():
                 print(f"process() : {path.parent.name}/{path.name}")
                 
                 if "unet" not in locals():
                     unet = UNet(
-                        parameters=None, model_path=Path.cwd() / self.model_name)
+                        parameters=None, 
+                        model_path=Path.cwd() / self.load_model_name
+                        )
                 
-                dapi = io.imread(dapi_path)
-                dapi = dapi.astype("float32") / 255
+                dap = io.imread(dap_path)
+                dap = dap.astype("float32") / 255
             
                 # Predict
-                prd = unet.predict(dapi)
-                
-                # Get mask
+                prd = unet.predict(dap)
                 dscale_factor = 2 ** self.process_level
                 prd = downscale_local_mean(prd, dscale_factor)
+                
+                # Get mask
                 msk_0 = prd > self.thresh_0
                 msk_1 = prd > self.thresh_1
                 msk = watershed(-prd, label(msk_1), mask=msk_0)
@@ -168,8 +170,8 @@ class Main:
                 msk = remove_small_objects(
                     msk, min_size=0.5 * (2 ** self.process_level) ** 2)
                 msk = ((msk > 0) * 255).astype("uint8")
-
-                # Save mask & clear
+                              
+                # Save & clear
                 io.imsave(msk_path, msk, check_contrast=False)
                 tf.keras.backend.clear_session()
                 gc.collect()
@@ -179,21 +181,21 @@ class Main:
     def analyse(self):
         
         for p, path in enumerate(self.view_paths):
-            msk_path  = path / f"mask_level-{self.process_level}.tif"
-            stack_path = path / f"stack_level-{self.process_level}.tif"
-            results_path = path / f"intensities_level-{self.process_level}.csv"
+            msk_path = path / f"mask_level-{self.process_level}.tif"
+            stk_path = path / f"stack_level-{self.process_level}.tif"
+            results_path = path / f"results_level-{self.process_level}.csv"
             
             if not results_path.exists():
                 print(f"analyse() : {path.parent.name}/{path.name}")
                 
                 msk = io.imread(msk_path) > 0
-                stack = io.imread(stack_path)
+                stk = io.imread(stk_path)
                 
                 # Measure intensities
                 msk = expand_labels(
                     label(msk), distance=1 * (2 ** self.process_level) ** 2)
                 results = regionprops_table(
-                    msk, intensity_image=np.moveaxis(stack, 0, -1), 
+                    msk, intensity_image=np.moveaxis(stk, 0, -1), 
                     properties=("label", "intensity_mean"),
                     )
                 results.pop("label", None)
@@ -218,12 +220,12 @@ if __name__ == "__main__":
 
     view_idx = 0
     channels = main_parameters["channels"]
-    distance = 1 * (2 ** main.process_level) ** 2
-    msk_path = main.view_paths[view_idx] / f"mask_level-{main.process_level}.tif"
-    stk_path = main.view_paths[view_idx] / f"stack_level-{main.process_level}.tif"
+    distance = 3 * (2 ** main.process_level) ** 2
+    msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
+    stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
     
     msk = io.imread(msk_path)
-    stack = io.imread(stk_path)
+    stk = io.imread(stk_path)
     
     # -------------------------------------------------------------------------
 
@@ -237,27 +239,92 @@ if __name__ == "__main__":
     
     # -------------------------------------------------------------------------
     
-    # t0 = time.time()
-    # print("regionprops_table() : ", end="", flush=False)
+    t0 = time.time()
+    print("regionprops_table() : ", end="", flush=False)
 
-    # results = regionprops_table(
-    #     msk, intensity_image=np.moveaxis(stack, 0, -1), 
-    #     properties=("label", "intensity_mean"),
-    #     )
-    # results.pop("label", None)
-    # results = {
-    #     channel : value 
-    #     for channel, value in zip(channels, results.values())
-    #     }
-    # results = pd.DataFrame(results)
-    # results.to_csv(Path.cwd() / "results.csv", index=False)
+    results = regionprops_table(
+        msk, intensity_image=np.moveaxis(stk, 0, -1), 
+        properties=("label", "centroid", "intensity_mean", "intensity_std"),
+        )
     
-    # t1 = time.time()
-    # print(f"{t1 - t0:.3f}s")
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+    
+    results["y"] = results.pop("centroid-0")
+    results["x"] = results.pop("centroid-1")
+    
+    for c, channel in enumerate(channels):
+        results["mean_" + channel] = results.pop(f"intensity_mean-{c}")
+    for c, channel in enumerate(channels):
+        results["std_" + channel ] = results.pop(f"intensity_std-{c}")
     
     # -------------------------------------------------------------------------
     
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_labels(msk)
+    coords = np.column_stack((results["y"], results["x"])).astype(int)
+    
+#%% Classification ------------------------------------------------------------
+
+    from sklearn.cluster import HDBSCAN
+    from sklearn.decomposition import PCA
+    from sklearn.preprocessing import StandardScaler
+
+    # Extract features
+    tags = (
+        [f"mean_{c}" for c in channels[1:]] + 
+        [f"std_{c}"  for c in channels[1:]]
+        )
+    features = np.column_stack(
+        [results[tag] for tag in tags]).T
+        
+    # Scale features
+    scaler = StandardScaler()
+    features = scaler.fit_transform(features).T
+    
+    # -------------------------------------------------------------------------
+    
+    t0 = time.time()
+    print("PCA : ", end="", flush=False)
+    
+    # PCA
+    pca = PCA(n_components=5)
+    features = pca.fit_transform(features)
+    
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+    
+    # -------------------------------------------------------------------------
+    
+    t0 = time.time()
+    print("HDBSCAN : ", end="", flush=False)
+    
+    # HDSCAN
+    hd = HDBSCAN(min_cluster_size=100, min_samples=50, n_jobs=-1)
+    clusters = hd.fit_predict(features)
+    clusters = norm_pct(clusters, pct_low=0, pct_high=100)    
+    print(np.unique(clusters))    
+    
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+    
+#%% Display -------------------------------------------------------------------
+
+    import napari
+    
+    stk_display = stk.copy()
+    for i, img in enumerate(stk_display):
+        stk_display[i] = norm_pct(img) * 255
+    
+    properties = {"cluster_id" : clusters}
+        
+    vwr = napari.Viewer()
+    vwr.add_image(stk_display)
+    points_layer = vwr.add_points(
+        coords,
+        name="points",
+        properties=properties,
+        size=5,
+        face_color="cluster_id",
+        face_colormap="viridis",
+        border_width=0.0,
+        )
+    points_layer.face_color_mode = "colormap"
