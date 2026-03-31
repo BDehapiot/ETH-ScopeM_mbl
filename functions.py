@@ -5,12 +5,15 @@ from pathlib import Path
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
+# bdtools
+from bdtools.norm import norm_pct
+
 # skimage
-from skimage.measure import label, regionprops
 from skimage.filters import gaussian, threshold_otsu
+from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
         
-#%% function(s) : extract() ---------------------------------------------------
+#%% function(s) : load --------------------------------------------------------
         
 def load_metadata(path):
 
@@ -136,9 +139,41 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
                 
     return np.stack(arr).squeeze()
 
-#%% function(s) : process() ---------------------------------------------------
+#%% function(s) : crop --------------------------------------------------------
 
+def get_crops(stk, msk, crop_size=32):
 
+    # Get centroids
+    results = regionprops_table(
+        label(msk), properties=("label", "centroid"),
+        )
+    y_coords = results["centroid-0"].astype("int32")
+    x_coords = results["centroid-1"].astype("int32")
+    
+    # Normalize (0 to 1)
+    if np.issubdtype(stk.dtype, np.integer):
+        for i, img in enumerate(stk):
+            stk[i] = norm_pct(img)
+    
+    # Pad (acc. to crop half size)
+    chs = crop_size // 2 # crop half size
+    pad_width = ((0, 0), (chs, chs), (chs, chs))
+    stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+
+    # Extract crops
+    crops = []
+    for (y, x) in zip(y_coords, x_coords):
+        y0 = y; y1 = y + crop_size
+        x0 = x; x1 = x + crop_size
+        if y1 - y0 != crop_size:
+            print(y0, y1)
+        if x1 - x0 != crop_size:
+            print(x0, x1)
+        crops.append(
+            np.swapaxes(stk[..., y0:y1, x0:x1], 0, -1)
+            )
+        
+    return np.stack(crops)
 
 #%% Execute -------------------------------------------------------------------
 

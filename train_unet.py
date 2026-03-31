@@ -13,7 +13,7 @@ from bdtools.patch import extract_patches
 
 #%% Inputs --------------------------------------------------------------------
 
-train_parameters = {
+unet_parameters = {
     
     # Procedure
     "run_patches"  : 0,
@@ -21,7 +21,6 @@ train_parameters = {
     "run_train"    : 1,
     
     # Paths
-    "data_path"  : Path("D:\local_mbl\data"),
     "train_path" : Path.cwd() / "data" / "train", 
     
     # extract_patches()
@@ -64,9 +63,9 @@ train_parameters = {
     
     }
 
-#%% Class(Train) --------------------------------------------------------------
+#%% Class(TrainUNet) --------------------------------------------------------------
 
-class Train:
+class TrainUNet:
     def __init__(self, main, parameters=None):
         self.main = main
         self.parameters = parameters | main.parameters
@@ -135,12 +134,9 @@ class Train:
         
         # Train model
         self.unet.train(imgs, msks)
-            
-        self.msks = msks
-        self.imgs = imgs
 
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    train = Train(main, parameters=train_parameters)
+    train = TrainUNet(main, parameters=unet_parameters)
