@@ -1,6 +1,7 @@
 #%% Imports -------------------------------------------------------------------
 
 import napari
+import pickle
 import numpy as np
 from skimage import io
 from pathlib import Path
@@ -62,6 +63,10 @@ class Display:
             vws_path / (f"mask_level-{self.process_level}.tif")
             for vws_path in self.vws_paths
             ]
+        self.prp_paths = [
+            vws_path / (f"props_level-{self.process_level}.pkl")
+            for vws_path in self.vws_paths
+            ]
         
         # Variables
         self.chn = self.channels[self.chn_idx]
@@ -73,6 +78,9 @@ class Display:
     def load_data(self):
         self.stk = io.imread(self.stk_paths[self.vws_idx])
         self.msk = io.imread(self.msk_paths[self.vws_idx])
+        with open(self.prp_paths[self.vws_idx], "rb") as file:
+            self.prp = pickle.load(file)
+            self.pts = np.column_stack((self.prp["y"], self.prp["x"]))
         
     def auto_contrast(self):
         img = self.vwr.layers["image"].data 
@@ -82,8 +90,9 @@ class Display:
         
     def update_view(self):
         self.load_data()
-        self.vwr.layers["image"].data = self.stk[self.chn_idx]
-        self.vwr.layers["mask" ].data = self.msk
+        self.vwr.layers["image" ].data = self.stk[self.chn_idx]
+        self.vwr.layers["mask"  ].data = self.msk
+        self.vwr.layers["points"].data = self.pts
         self.auto_contrast()
     
     def update_channel(self):    
@@ -160,11 +169,18 @@ class Display:
             gamma=0.75, 
             )
         self.vwr.add_image(
-            self.msk, name="mask", visible=1,
+            self.msk, name="mask", visible=0,
             blending="additive", colormap="bop orange",
             opacity=0.5, 
             )
         
+        self.vwr.add_points(
+            self.pts, name="points", visible=1,
+            blending="additive", face_color="orange",
+            size=5, border_width=0.0,
+            opacity=0.25, 
+            )
+                
         self.auto_contrast()
 
 #%% Execute -------------------------------------------------------------------

@@ -13,6 +13,11 @@ from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
         
+#%% function(s) : tools -------------------------------------------------------
+
+def norm_12_to_8bits(arr):
+    return ((arr + 8) / 16).astype("uint8")
+
 #%% function(s) : load --------------------------------------------------------
         
 def load_metadata(path):
@@ -141,19 +146,20 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
 
 #%% function(s) : crop --------------------------------------------------------
 
-def get_crops(stk, msk, crop_size=32):
+def get_crops(stk, msk, prp=None, crop_size=32):
 
-    # Get centroids
-    results = regionprops_table(
-        label(msk), properties=("label", "centroid"),
-        )
-    y_coords = results["centroid-0"].astype("int32")
-    x_coords = results["centroid-1"].astype("int32")
-    
+    if prp is None:
+        
+        # Get centroids
+        prp = regionprops_table(
+            label(msk), properties=("label", "centroid"),
+            )
+        prp["y"] = prp.pop("centroid-0").astype("int32")
+        prp["x"] = prp.pop("centroid-1").astype("int32")
+        
     # Normalize (0 to 1)
     if np.issubdtype(stk.dtype, np.integer):
-        for i, img in enumerate(stk):
-            stk[i] = norm_pct(img)
+        stk = stk.astype("float32") / 255
     
     # Pad (acc. to crop half size)
     chs = crop_size // 2 # crop half size
@@ -162,7 +168,7 @@ def get_crops(stk, msk, crop_size=32):
 
     # Extract crops
     crops = []
-    for (y, x) in zip(y_coords, x_coords):
+    for (y, x) in zip(prp["y"], prp["x"]):
         y0 = y; y1 = y + crop_size
         x0 = x; x1 = x + crop_size
         if y1 - y0 != crop_size:

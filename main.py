@@ -10,6 +10,7 @@ from pathlib import Path
 
 # functions
 from functions import (
+    norm_12_to_8bits, 
     load_metadata, load_arr,
     )
 
@@ -24,6 +25,12 @@ from skimage.morphology import remove_small_objects
 from skimage.measure import label, regionprops_table
 from skimage.segmentation import watershed, expand_labels
 
+#%% Comments ------------------------------------------------------------------
+
+"""
+Clarify how and where measurments are made
+"""
+
 #%% Inputs --------------------------------------------------------------------
 
 main_parameters = {
@@ -35,7 +42,7 @@ main_parameters = {
     
     # Paths
     "data_path"       : Path("D:\local_mbl\data"),
-    "load_model_name" : "model_256_edt_1024-52",
+    "load_model_name" : "model_256_edt_1024-48",
 
     # extract()
     "preview_level"   : 4,
@@ -90,7 +97,7 @@ class Main:
             
             # Metadata
             if not mtd_path.exists():
-                print(f"extract() : {path.name}")
+                print(f"Main() : extract() : {path.name}")
                 mtd = load_metadata(path)
                 with open(mtd_path, "wb") as file:
                     pickle.dump(mtd, file)
@@ -124,7 +131,7 @@ class Main:
                         path, metadata=mtd, 
                         channels="DAPI", level=0, roi_idx=idx,
                         )
-                    dap = (norm_pct(dap) * 255).astype("uint8")
+                    dap = norm_12_to_8bits(dap)
                     io.imsave(dap_path, dap, check_contrast=False)
                     
                 # Stack at process level 
@@ -134,7 +141,7 @@ class Main:
                         path, metadata=mtd, 
                         channels="all", level=self.process_level, roi_idx=idx,
                         )
-                    stk = ((stk + 8) / 16 ).astype("uint8") # 12bits to 8bits
+                    stk = norm_12_to_8bits(stk)
                     io.imsave(stk_path, stk, check_contrast=False)                               
                         
 #%% Class(Main) : process() ---------------------------------------------------
@@ -144,9 +151,10 @@ class Main:
         for p, path in enumerate(self.vws_paths):
             dap_path = path / "dapi_level-0.tif"
             msk_path = path / f"mask_level-{self.process_level}.tif"
+            prp_path = path / f"props_level-{self.process_level}.pkl"
 
             if not msk_path.exists():
-                print(f"process() : {path.parent.name}/{path.name}")
+                print(f"Main() : process() : {path.parent.name}/{path.name}")
                 
                 if "unet" not in locals():
                     unet = UNet(
@@ -170,9 +178,18 @@ class Main:
                 msk = remove_small_objects(
                     msk, min_size=0.5 * (2 ** self.process_level) ** 2)
                 msk = ((msk > 0) * 255).astype("uint8")
+                
+                # Get centroids
+                prp = regionprops_table(
+                    label(msk), properties=("label", "centroid"),
+                    )
+                prp["y"] = prp.pop("centroid-0").astype("int32")
+                prp["x"] = prp.pop("centroid-1").astype("int32")
                               
                 # Save & clear
                 io.imsave(msk_path, msk, check_contrast=False)
+                with open(prp_path, "wb") as file:
+                    pickle.dump(prp, file)
                 tf.keras.backend.clear_session()
                 gc.collect()
             
@@ -186,7 +203,7 @@ class Main:
             results_path = path / f"results_level-{self.process_level}.csv"
             
             if not results_path.exists():
-                print(f"analyse() : {path.parent.name}/{path.name}")
+                print(f"Main() : analyse() : {path.parent.name}/{path.name}")
                 
                 msk = io.imread(msk_path) > 0
                 stk = io.imread(stk_path)
@@ -214,165 +231,29 @@ if __name__ == "__main__":
 
 #%%
 
-    import time
+    # import time
     
-    # -------------------------------------------------------------------------
+    # # -------------------------------------------------------------------------
 
-    view_idx = 0
-    channels = main_parameters["channels"]
-    distance = 3 * (2 ** main.process_level) ** 2
-    msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
-    stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
-    msk = io.imread(msk_path)
-    stk = io.imread(stk_path)
+    # view_idx = 0
+    # channels = main_parameters["channels"]
+    # distance = 3 * (2 ** main.process_level) ** 2
+    # msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
+    # stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
+    # msk = io.imread(msk_path)
+    # stk = io.imread(stk_path)
     
-    # -------------------------------------------------------------------------
+    # # -------------------------------------------------------------------------
 
-    t0 = time.time()
-    print("regionprops_table() : ", end="", flush=False)
+    # t0 = time.time()
+    # print("regionprops_table() : ", end="", flush=False)
 
-    results = regionprops_table(
-        label(msk), properties=("label", "centroid"),
-        )
+    # results = regionprops_table(
+    #     label(msk), properties=("label", "centroid"),
+    #     )
     
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
     
-    results["y"] = results.pop("centroid-0")
-    results["x"] = results.pop("centroid-1")
-    
-#%%
-            
-    def get_crops(stk, y_coords, x_coords, crop_size=32):
-
-        y_coords = y_coords.astype("int32")
-        x_coords = x_coords.astype("int32")
-        
-        # Normalize (0 to 1)
-        if np.issubdtype(stk.dtype, np.integer):
-            for i, img in enumerate(stk):
-                stk[i] = norm_pct(img)
-        
-        # Pad (acc. to crop half size)
-        chs = crop_size // 2 # crop half size
-        pad_width = ((0, 0), (chs, chs), (chs, chs))
-        stk = np.pad(stk, pad_width=pad_width, mode="reflect")
-
-        # Extract crops
-        crops = []
-        for (y, x) in zip(y_coords, x_coords):
-            y0 = y; y1 = y + crop_size
-            x0 = x; x1 = x + crop_size
-            if y1 - y0 != crop_size:
-                print(y0, y1)
-            if x1 - x0 != crop_size:
-                print(x0, x1)
-            crops.append(
-                np.swapaxes(stk[..., y0:y1, x0:x1], 0, -1)
-                )
-            
-        return np.stack(crops)
-    
-    # -------------------------------------------------------------------------
-    
-    t0 = time.time()
-    print("get_crops() : ", end="", flush=False)
-    
-    crops = get_crops(stk, results["y"], results["x"], crop_size=32)
-    
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
-        
-#%%
-
-    import tensorflow as tf
-    from tensorflow.keras import layers, Model
-        
-    def build_autoencoder(crop_size, n_channels, latent_dim=64):
-        """
-        Builds and compiles a Convolutional Autoencoder.
-        
-        Returns:
-            encoder: Model used to compress images into latent vectors.
-            decoder: Model used to reconstruct images from latent vectors.
-            autoencoder: The full compiled model for training.
-        """
-        
-        # ==========================================
-        # 1. ENCODER
-        # ==========================================
-        encoder_inputs = layers.Input(shape=(crop_size, crop_size, n_channels))
-        
-        x = layers.Conv2D(32, (3, 3), activation='relu', padding='same')(encoder_inputs)
-        x = layers.MaxPooling2D((2, 2), padding='same')(x)
-        
-        x = layers.Conv2D(64, (3, 3), activation='relu', padding='same')(x)
-        x = layers.MaxPooling2D((2, 2), padding='same')(x)
-        
-        x = layers.Flatten()(x)
-        latent_space = layers.Dense(latent_dim, activation='relu', name='latent_features')(x)
-        
-        encoder = Model(encoder_inputs, latent_space, name='encoder')
-    
-        # ==========================================
-        # 2. DECODER
-        # ==========================================
-        decoder_inputs = layers.Input(shape=(latent_dim,))
-        
-        # Calculate the spatial dimensions before flattening
-        # Since we max-pooled twice (divided by 2 twice), the size is crop_size // 4
-        spatial_dim = crop_size // 4
-        
-        x = layers.Dense(spatial_dim * spatial_dim * 64, activation='relu')(decoder_inputs)
-        x = layers.Reshape((spatial_dim, spatial_dim, 64))(x)
-        
-        x = layers.Conv2DTranspose(64, (3, 3), activation='relu', padding='same')(x)
-        x = layers.UpSampling2D((2, 2))(x)
-        
-        x = layers.Conv2DTranspose(32, (3, 3), activation='relu', padding='same')(x)
-        x = layers.UpSampling2D((2, 2))(x)
-        
-        decoder_outputs = layers.Conv2D(n_channels, (3, 3), activation='sigmoid', padding='same')(x)
-        
-        decoder = Model(decoder_inputs, decoder_outputs, name='decoder')
-    
-        # ==========================================
-        # 3. FULL AUTOENCODER
-        # ==========================================
-        autoencoder_inputs = layers.Input(shape=(crop_size, crop_size, n_channels))
-        encoded_img = encoder(autoencoder_inputs)
-        reconstructed_img = decoder(encoded_img)
-        
-        autoencoder = Model(autoencoder_inputs, reconstructed_img, name='autoencoder')
-        autoencoder.compile(optimizer='adam', loss='mse')
-        
-        return encoder, decoder, autoencoder
-
-#%% 
-
-    crop_size  = 32      # Assuming 32x32 crops (y, x)
-    n_channels = 8       # Replace with your actual number of channels
-    latent_dim = 64      # The size of the feature vector you'll cluster later
-
-    encoder, decoder, autoencoder = build_autoencoder(
-        crop_size=crop_size, n_channels=n_channels, latent_dim=latent_dim)
-    
-    # -------------------------------------------------------------------------
-    
-    batch_size = 256
-    train_dataset = tf.data.Dataset.from_tensor_slices((crops, crops))
-    train_dataset = train_dataset.batch(batch_size).prefetch(tf.data.AUTOTUNE)
-    history = autoencoder.fit(train_dataset, epochs=5)
-    latent_vectors = encoder.predict(crops, batch_size=batch_size)
-    
-#%%
-    
-    idxs = np.random.choice(latent_vectors.shape[0], size=2000, replace=False)
-    test = latent_vectors[idxs, :]
-    
-    import napari        
-    vwr = napari.Viewer()
-    vwr.add_image(test)
-    
-    
-    
+    # results["y"] = results.pop("centroid-0")
+    # results["x"] = results.pop("centroid-1")

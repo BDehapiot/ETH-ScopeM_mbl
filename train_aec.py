@@ -1,5 +1,6 @@
 #%% Imports -------------------------------------------------------------------
 
+import pickle
 import numpy as np
 from skimage import io
 from main import Main, main_parameters
@@ -8,14 +9,19 @@ from main import Main, main_parameters
 from functions import get_crops
 
 # tensorflow
+import tensorflow as tf
 from tensorflow.keras import layers, Model
 
 #%% Inputs --------------------------------------------------------------------
 
-vae_parameters = {
+aec_parameters = {
+    
+    # Procedure
+    "run_crops"   : 1,
+    "run_train"   : 0,
     
     # extract()    
-    "n_crops"     : 2e4,
+    "n_crops"     : 5000,
     "crop_size"   : 32,
     
     # build()
@@ -27,9 +33,9 @@ vae_parameters = {
     
     }
 
-#%% Class(TrainVAE) -----------------------------------------------------------
+#%% Class(TrainAEC) -----------------------------------------------------------
 
-class TrainVAE:
+class TrainAEC:
     def __init__(self, main, parameters=None):
         self.main = main
         self.parameters = parameters | main.parameters
@@ -38,33 +44,47 @@ class TrainVAE:
                 setattr(self, key, val)
                 
         # Run
-        self.extract()
-        # self.build()
+        if self.run_crops:
+            self.extract_crops()
+        if self.run_train:
+            self.build()
+            self.train()
         
-#%% Class(TrainVAE) : extract() -----------------------------------------------
+#%% Class(TrainAEC) : extract() -----------------------------------------------
 
-    def extract(self):
+    def extract_crops(self):
         
-        msk_name = f"mask_level-{main.process_level}.tif"
+        # Paths
         stk_name = f"stack_level-{main.process_level}.tif"
-        msk_paths = list(main.data_path.rglob(msk_name))
-        stk_paths = list(main.data_path.rglob(stk_name))
+        msk_name = f"mask_level-{main.process_level}.tif"
+        prp_name = f"props_level-{main.process_level}.pkl"
+        stk_paths = list(self.main.data_path.rglob(stk_name))
+        msk_paths = list(self.main.data_path.rglob(msk_name))
+        prp_paths = list(self.main.data_path.rglob(prp_name))
+        crop_path = self.main.data_path / "crops.tif"
         
+        # Extract crops
         self.crops = []
-        for p, (msk_path, stk_path) in enumerate(zip(msk_paths, stk_paths)):
-            if p == 0:
-                msk = io.imread(msk_path)
-                stk = io.imread(stk_path)
-                crops = get_crops(stk, msk, crop_size=32)
-                self.idxs = np.random.choice(
-                    crops.shape[0] + 1, size=int(self.n_crops), replace=False)
-                # self.crops.append(crops[idxs, ...])
+        for p, (stk_path, msk_path, prp_path) in enumerate(zip(
+                stk_paths, msk_paths, prp_paths)):
+            print(
+                f"TrainAEC() : extract() : "
+                f"{msk_path.parent.parent.name}/{msk_path.parent.name}"
+                )
+            stk = io.imread(stk_path)
+            msk = io.imread(msk_path)
+            with open(prp_path, "rb") as file:
+                prp = pickle.load(file)
+            crops = get_crops(stk, msk, prp=prp, crop_size=32)
+            self.idxs = np.random.choice(
+                crops.shape[0], size=self.n_crops, replace=False)
+            self.crops.append(crops[self.idxs, ...])
+        self.crops = np.concatenate(self.crops, axis=0)
         
+        # Save crops
+        io.imsave(crop_path, self.crops, check_contrast=False)
         
-        
-        pass
-        
-#%% Class(TrainVAE) : build() -------------------------------------------------
+#%% Class(TrainAEC) : build() -------------------------------------------------
     
     def build(self):
             
@@ -75,7 +95,6 @@ class TrainVAE:
         
         x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(encoder_inputs)
         x = layers.MaxPooling2D((2, 2), padding="same")(x)
-        
         x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
         x = layers.MaxPooling2D((2, 2), padding="same")(x)
         
@@ -93,10 +112,8 @@ class TrainVAE:
         
         x = layers.Dense(spatial_dim * spatial_dim * 64, activation="relu")(decoder_inputs)
         x = layers.Reshape((spatial_dim, spatial_dim, 64))(x)
-        
         x = layers.Conv2DTranspose(64, (3, 3), activation="relu", padding="same")(x)
         x = layers.UpSampling2D((2, 2))(x)
-        
         x = layers.Conv2DTranspose(32, (3, 3), activation="relu", padding="same")(x)
         x = layers.UpSampling2D((2, 2))(x)
         
@@ -116,15 +133,25 @@ class TrainVAE:
             autoencoder_inputs, reconstructed_img, name="autoencoder")
         self.autoencoder.compile(optimizer="adam", loss="mse")
     
-#%% Class(TrainVAE) : train() -------------------------------------------------
+#%% Class(Trainaec) : train() -------------------------------------------------
 
     def train(self):
-        pass
+        
+        # Load crops (if necessary)
+        if not hasattr(self, "crops"):
+            crop_path = self.main.data_path / "crops.tif"
+            self.crops = io.imread(crop_path)
+        
+        dataset = tf.data.Dataset.from_tensor_slices((self.crops, self.crops))
+        dataset = dataset.batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
+        self.history = self.autoencoder.fit(dataset, epochs=20)
+        
+        # self.latent_vectors = self.encoder.predict(self.crops, batch_size=self.batch_size)
+        
 
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    train = TrainVAE(main, parameters=vae_parameters)
+    train = TrainAEC(main, parameters=aec_parameters)
     
-    idxs = train.idxs

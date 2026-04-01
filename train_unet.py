@@ -16,9 +16,10 @@ from bdtools.patch import extract_patches
 unet_parameters = {
     
     # Procedure
-    "run_patches"  : 0,
-    "run_annotate" : 0,
-    "run_train"    : 1,
+    "run_patches_0"  : 0, # new
+    "run_patches_1"  : 0, # from masks
+    "run_annotate"   : 0,
+    "run_train"      : 1,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train", 
@@ -32,7 +33,7 @@ unet_parameters = {
     
     # Paths
     "root_path"          : None,
-    "model_name"         : "model_256_edt_1024-52",
+    "model_name"         : None,
 
     # Build
     "input_shape"        : (None, None, 1),
@@ -41,7 +42,7 @@ unet_parameters = {
         
     # Train
     "epochs"             : 256,
-    "batch_size"         : 16,
+    "batch_size"         : 64,
     "validation_split"   : 0.2,
     "metric"             : "soft_dice_coef",
     "learning_rate"      : 0.001,
@@ -74,8 +75,10 @@ class TrainUNet:
                 setattr(self, key, val)
                 
         # Run
-        if self.run_patches:
-            self.extract_patches()
+        if self.run_patches_0:
+            self.extract_patches_0()
+        if self.run_patches_1:
+            self.extract_patches_1()
         if self.run_annotate:
             self.annotate()
         if self.run_train:
@@ -83,9 +86,14 @@ class TrainUNet:
 
 #%% Class(Train) extract_patches() --------------------------------------------
 
-    def extract_patches(self):
+    def extract_patches_0(self):
         
-        for p, path in enumerate(self.main.dapi_paths):
+        dap_paths = [
+            vws_path / "dapi_level-0.tif"
+            for vws_path in self.main.vws_paths
+            ]
+        
+        for p, path in enumerate(dap_paths):
             dapi = io.imread(path)
             patches = extract_patches(
                 dapi, self.extract_patch_size, self.extract_patch_overlap)
@@ -93,14 +101,36 @@ class TrainUNet:
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
             for idx in idxs:
                 patch_name = (
+                    f"{str(path.parent.parent.name)}_"
                     f"{str(path.parent.name)}_"
                     f"{path.stem}_"
-                    f"{idx:04d}.tif"
+                    f"{idx:05d}.tif"
                     )
                 io.imsave(
                     self.train_path / patch_name,
                     patches[idx], check_contrast=False,
                     )
+                
+    def extract_patches_1(self):
+        
+        msk_paths = list(self.train_path.glob("*_mask.tif"))
+        for path in msk_paths:
+            
+            # Parse stem
+            stem = path.stem
+            vws_path = self.main.data_path / stem[:12] / stem[13:20]
+            dap_path = vws_path / "dapi_level-0.tif"
+            idx = int(stem.split("_")[-2])
+            
+            # Extract & save patch
+            dapi = io.imread(dap_path)
+            patch = extract_patches(
+                dapi, self.extract_patch_size, self.extract_patch_overlap)[idx]
+            patch_name = str(path).replace("_mask", "")
+            io.imsave(
+                self.train_path / patch_name,
+                patch, check_contrast=False,
+                )
     
 #%% Class(Train) annotate() ---------------------------------------------------
 
@@ -112,7 +142,7 @@ class TrainUNet:
     def train(self):
         
         # Load data
-        msk_paths = list(self.train_path.glob("*mask.tif"))
+        msk_paths = list(self.train_path.glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))
