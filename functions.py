@@ -18,6 +18,14 @@ from skimage.morphology import disk, binary_closing, remove_small_objects
 def norm_12_to_8bits(arr):
     return ((arr + 8) / 16).astype("uint8")
 
+def norm_pct_8bits(arr):
+    if arr.ndim == 2:
+        return (norm_pct(arr) * 255).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = (norm_pct(img) * 255).astype("uint8")
+        return arr
+
 #%% function(s) : load --------------------------------------------------------
         
 def load_metadata(path):

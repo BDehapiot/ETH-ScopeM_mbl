@@ -23,8 +23,8 @@ from tensorflow.keras.optimizers import Adam
 class UNet:
     
     def __init__(self, parameters=None, model_path=None):
-        self.model_path = model_path
         self.parameters = parameters
+        self.model_path = model_path
         
         # Run
         self.initialize()

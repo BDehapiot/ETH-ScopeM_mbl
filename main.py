@@ -10,7 +10,7 @@ from pathlib import Path
 
 # functions
 from functions import (
-    norm_12_to_8bits, 
+    norm_12_to_8bits, norm_pct_8bits,
     load_metadata, load_arr,
     )
 
@@ -28,7 +28,8 @@ from skimage.segmentation import watershed, expand_labels
 #%% Comments ------------------------------------------------------------------
 
 """
-Clarify how and where measurments are made
+- Make normalization more robust, preview all image of same channel
+- Clarify how and where measurments are made
 """
 
 #%% Inputs --------------------------------------------------------------------
@@ -66,7 +67,7 @@ class Main:
         # Run
         self.initialize()
         self.extract()
-        self.process()
+        # self.process()
         # self.analyse()
         
 #%% Class(Main) : initialize() ------------------------------------------------
@@ -112,37 +113,38 @@ class Main:
                     channels="all", level=self.preview_level
                     )
                 pvw = np.mean(pvw, axis=0)
-                pvw = (norm_pct(pvw) * 255).astype("uint8")
+                # pvw = (norm_pct(pvw) * 255).astype("uint8")
+                pvw = norm_12_to_8bits(pvw)
                 io.imsave(pvw_path, pvw, check_contrast=False)
 
-            # View(s)
-            for idx in range(len(mtd["roi"])):
+            # # View(s)
+            # for idx in range(len(mtd["roi"])):
                 
-                # Setup view directory
-                vws_path = sld_path / f"view_{idx:02d}"
-                self.vws_paths.append(vws_path)
-                if not vws_path.exists():
-                    vws_path.mkdir(parents=True, exist_ok=True) 
+            #     # Setup view directory
+            #     vws_path = sld_path / f"view_{idx:02d}"
+            #     self.vws_paths.append(vws_path)
+            #     if not vws_path.exists():
+            #         vws_path.mkdir(parents=True, exist_ok=True) 
                 
-                # DAPI at level 0 (for predictions)
-                dap_path = vws_path / "dapi_level-0.tif"
-                if not dap_path.exists():
-                    dap = load_arr(
-                        path, metadata=mtd, 
-                        channels="DAPI", level=0, roi_idx=idx,
-                        )
-                    dap = norm_12_to_8bits(dap)
-                    io.imsave(dap_path, dap, check_contrast=False)
+            #     # DAPI at level 0 (for predictions)
+            #     dap_path = vws_path / "dapi_level-0.tif"
+            #     if not dap_path.exists():
+            #         dap = load_arr(
+            #             path, metadata=mtd, 
+            #             channels="DAPI", level=0, roi_idx=idx,
+            #             )
+            #         dap = norm_pct_8bits(dap)
+            #         io.imsave(dap_path, dap, check_contrast=False)
                     
-                # Stack at process level 
-                stk_path = vws_path / f"stack_level-{self.process_level}.tif"
-                if not stk_path.exists():
-                    stk = load_arr(
-                        path, metadata=mtd, 
-                        channels="all", level=self.process_level, roi_idx=idx,
-                        )
-                    stk = norm_12_to_8bits(stk)
-                    io.imsave(stk_path, stk, check_contrast=False)                               
+            #     # Stack at process level 
+            #     stk_path = vws_path / f"stack_level-{self.process_level}.tif"
+            #     if not stk_path.exists():
+            #         stk = load_arr(
+            #             path, metadata=mtd, 
+            #             channels="all", level=self.process_level, roi_idx=idx,
+            #             )
+            #         stk = norm_pct_8bits(stk)
+            #         io.imsave(stk_path, stk, check_contrast=False)                               
                         
 #%% Class(Main) : process() ---------------------------------------------------
 
@@ -153,7 +155,8 @@ class Main:
             msk_path = path / f"mask_level-{self.process_level}.tif"
             prp_path = path / f"props_level-{self.process_level}.pkl"
 
-            if not msk_path.exists():
+            # if not msk_path.exists():
+            if p == 0:
                 print(f"Main() : process() : {path.parent.name}/{path.name}")
                 
                 if "unet" not in locals():
@@ -162,6 +165,7 @@ class Main:
                         model_path=Path.cwd() / self.load_model_name
                         )
                 
+                # Load
                 dap = io.imread(dap_path)
                 dap = dap.astype("float32") / 255
             
