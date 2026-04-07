@@ -28,7 +28,7 @@ def norm_pct_8bits(arr):
 
 #%% function(s) : load --------------------------------------------------------
         
-def load_metadata(path):
+def load_metadata(path, preview_level=None):
 
     # Nested function(s) ------------------------------------------------------    
 
@@ -85,8 +85,9 @@ def load_metadata(path):
         "level"    : [],
         "pixsize"  : [],
         "shape"    : [],
+        "preview"  : [],
         }
-    
+        
     # Fetch metadata
     with QPTiffFile(path) as qptiff:
         for level in range(len(qptiff.series[0].levels)):
@@ -102,6 +103,15 @@ def load_metadata(path):
                 
     # Get view ROIs
     get_view_rois(path, metadata)
+    
+    # Get preview(s)
+    metadata
+    if preview_level is None:
+        preview_level = metadata["level"][-1]
+    for idx in range(len(metadata["roi"])):
+        preview = load_arr(
+            path, metadata=metadata, level=preview_level, roi_idx=idx)
+        metadata["preview"].append(np.stack(preview))
     
     return metadata
 
@@ -229,7 +239,7 @@ if __name__ == "__main__":
         
     t0 = time.time()
     print("load_metadata() : ", end="", flush=True)
-    metadata = load_metadata(path)
+    metadata = load_metadata(path, preview_level=4)
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
     
@@ -241,16 +251,16 @@ if __name__ == "__main__":
     
     # -------------------------------------------------------------------------
     
-    t0 = time.time()
-    print("load_arr() : ", end="", flush=True)
-    arr = load_arr(
-        path, metadata=metadata, 
-        channels=channels, level=level, roi_idx=idx,
-        )
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
+    # t0 = time.time()
+    # print("load_arr() : ", end="", flush=True)
+    # arr = load_arr(
+    #     path, metadata=metadata, 
+    #     channels=channels, level=level, roi_idx=idx,
+    #     )
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
 
-    # Display
-    import napari
-    vwr = napari.Viewer()
-    vwr.add_image(arr)
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(arr)

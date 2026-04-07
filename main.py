@@ -21,9 +21,9 @@ from bdtools.unet.unet import UNet
 
 # skimage
 from skimage.transform import downscale_local_mean
-from skimage.morphology import remove_small_objects
 from skimage.measure import label, regionprops_table
 from skimage.segmentation import watershed, expand_labels
+from skimage.morphology import remove_small_objects, binary_erosion
 
 #%% Comments ------------------------------------------------------------------
 
@@ -92,14 +92,15 @@ class Main:
         
         self.vws_paths = [] 
         for p, path in enumerate(self.qpt_paths): 
+
             sld_path = self.sld_paths[p]
             mtd_path = sld_path / "metadata.pkl"
-            pvw_path = sld_path / f"preview_level-{self.preview_level}.tif"
+            pvw_path = sld_path / "preview.tif"
             
             # Metadata
             if not mtd_path.exists():
                 print(f"Main() : extract() : {path.name}")
-                mtd = load_metadata(path)
+                mtd = load_metadata(path, preview_level=self.preview_level)
                 with open(mtd_path, "wb") as file:
                     pickle.dump(mtd, file)
             else:
@@ -108,14 +109,15 @@ class Main:
         
             # Preview
             if not pvw_path.exists():
-                pvw = load_arr(
-                    path, metadata=mtd, 
-                    channels="all", level=self.preview_level
-                    )
-                pvw = np.mean(pvw, axis=0)
-                # pvw = (norm_pct(pvw) * 255).astype("uint8")
-                pvw = norm_12_to_8bits(pvw)
-                io.imsave(pvw_path, pvw, check_contrast=False)
+                for idx in range(len(mtd["roi"])):
+                    pvw = mtd["preview"][idx]
+                    pvw = np.mean(pvw, axis=0)
+                    pvw = norm_pct_8bits(pvw)
+                    pvw_str = f"_{idx:02d}_level-{self.preview_level}.tif"
+                    io.imsave(
+                        str(pvw_path).replace(".tif", pvw_str), 
+                        pvw, check_contrast=False
+                        )
 
             # # View(s)
             # for idx in range(len(mtd["roi"])):
