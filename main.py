@@ -43,7 +43,8 @@ main_parameters = {
     
     # Paths
     "data_path"       : Path("D:\local_mbl\data"),
-    "load_model_name" : "model_256_edt_1024-48",
+    "load_model0_name" : "model_256_binary_1024-43",
+    "load_model1_name" : "model_256_edt_1024-48",
 
     # extract()
     "preview_level"   : 4,
@@ -90,35 +91,48 @@ class Main:
 
     def extract(self):
         
+        unet0 = UNet(
+            parameters=None, 
+            model_path=Path.cwd() / self.load_model0_name
+            )
+        
         self.vws_paths = [] 
         for p, path in enumerate(self.qpt_paths): 
 
             sld_path = self.sld_paths[p]
             mtd_path = sld_path / "metadata.pkl"
             pvw_path = sld_path / "preview.tif"
+            msk_path = sld_path / "mask.tif"
             
             # Metadata
             if not mtd_path.exists():
                 print(f"Main() : extract() : {path.name}")
-                mtd = load_metadata(path, preview_level=self.preview_level)
+                mtd = load_metadata(path, model=unet0)
                 with open(mtd_path, "wb") as file:
                     pickle.dump(mtd, file)
             else:
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
         
-            # Preview
+            # Preview & mask
             if not pvw_path.exists():
+                                    
                 for idx in range(len(mtd["roi"])):
                     pvw = mtd["preview"][idx]
+                    msk = mtd["mask"   ][idx]
                     pvw = np.mean(pvw, axis=0)
                     pvw = norm_pct_8bits(pvw)
-                    pvw_str = f"_{idx:02d}_level-{self.preview_level}.tif"
+                    msk = norm_pct_8bits(msk)
+                    new_str = f"_{idx:02d}_level-{self.preview_level}.tif"
                     io.imsave(
-                        str(pvw_path).replace(".tif", pvw_str), 
+                        str(pvw_path).replace(".tif", new_str), 
                         pvw, check_contrast=False
                         )
-
+                    io.imsave(
+                        str(msk_path).replace(".tif", new_str), 
+                        msk, check_contrast=False
+                        )
+                    
             # # View(s)
             # for idx in range(len(mtd["roi"])):
                 
@@ -164,7 +178,7 @@ class Main:
                 if "unet" not in locals():
                     unet = UNet(
                         parameters=None, 
-                        model_path=Path.cwd() / self.load_model_name
+                        model_path=Path.cwd() / self.load_model1_name
                         )
                 
                 # Load

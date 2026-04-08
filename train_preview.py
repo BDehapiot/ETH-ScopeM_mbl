@@ -17,8 +17,8 @@ unet_parameters = {
     
     # Procedure
     "run_patches_0" : 0, # new
-    "run_annotate"  : 1,
-    "run_train"     : 0,
+    "run_annotate"  : 0,
+    "run_train"     : 1,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train_preview", 
@@ -49,7 +49,7 @@ unet_parameters = {
 
     # Prepare
     "patch_size"         : 256,
-    "patch_overlap"      : 0,
+    "patch_overlap"      : 128,
     "mask_method"        : "binary",
             
     # Augment

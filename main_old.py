@@ -21,9 +21,9 @@ from bdtools.unet.unet import UNet
 
 # skimage
 from skimage.transform import downscale_local_mean
-from skimage.morphology import remove_small_objects
 from skimage.measure import label, regionprops_table
 from skimage.segmentation import watershed, expand_labels
+from skimage.morphology import remove_small_objects, binary_erosion
 
 #%% Comments ------------------------------------------------------------------
 
@@ -43,7 +43,8 @@ main_parameters = {
     
     # Paths
     "data_path"       : Path("D:\local_mbl\data"),
-    "load_model_name" : "model_256_edt_1024-48",
+    "load_model0_name" : "model_256_binary_1024-26",
+    "load_model1_name" : "model_256_edt_1024-48",
 
     # extract()
     "preview_level"   : 4,
@@ -92,31 +93,47 @@ class Main:
         
         self.vws_paths = [] 
         for p, path in enumerate(self.qpt_paths): 
+
             sld_path = self.sld_paths[p]
             mtd_path = sld_path / "metadata.pkl"
-            pvw_path = sld_path / f"preview_level-{self.preview_level}.tif"
+            pvw_path = sld_path / "preview.tif"
+            msk_path = sld_path / "mask.tif"
             
             # Metadata
             if not mtd_path.exists():
                 print(f"Main() : extract() : {path.name}")
-                mtd = load_metadata(path)
+                mtd = load_metadata(path, preview_level=self.preview_level)
                 with open(mtd_path, "wb") as file:
                     pickle.dump(mtd, file)
             else:
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
         
-            # Preview
+            # Preview & mask
             if not pvw_path.exists():
-                pvw = load_arr(
-                    path, metadata=mtd, 
-                    channels="all", level=self.preview_level
-                    )
-                pvw = np.mean(pvw, axis=0)
-                # pvw = (norm_pct(pvw) * 255).astype("uint8")
-                pvw = norm_12_to_8bits(pvw)
-                io.imsave(pvw_path, pvw, check_contrast=False)
-
+                
+                if "unet" not in locals():
+                    unet = UNet(
+                        parameters=None, 
+                        model_path=Path.cwd() / self.load_model0_name
+                        )
+                
+                for idx in range(len(mtd["roi"])):
+                    pvw = mtd["preview"][idx]
+                    pvw = np.mean(pvw, axis=0)
+                    pvw = norm_pct(pvw)
+                    msk = norm_pct_8bits(unet.predict(pvw) > 0.5)
+                    pvw = norm_pct_8bits(pvw)
+                    new_str = f"_{idx:02d}_level-{self.preview_level}.tif"
+                    io.imsave(
+                        str(pvw_path).replace(".tif", new_str), 
+                        pvw, check_contrast=False
+                        )
+                    io.imsave(
+                        str(msk_path).replace(".tif", new_str), 
+                        msk, check_contrast=False
+                        )
+                    
             # # View(s)
             # for idx in range(len(mtd["roi"])):
                 
@@ -162,7 +179,7 @@ class Main:
                 if "unet" not in locals():
                     unet = UNet(
                         parameters=None, 
-                        model_path=Path.cwd() / self.load_model_name
+                        model_path=Path.cwd() / self.load_model1_name
                         )
                 
                 # Load

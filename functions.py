@@ -7,6 +7,7 @@ import xml.etree.ElementTree as ET
 
 # bdtools
 from bdtools.norm import norm_pct
+from bdtools.unet.unet import UNet
 
 # skimage
 from skimage.filters import gaussian, threshold_otsu
@@ -26,9 +27,16 @@ def norm_pct_8bits(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
         return arr
 
-#%% function(s) : load --------------------------------------------------------
+#%% function(s) : load_metadata() ---------------------------------------------
         
-def load_metadata(path, preview_level=None):
+def load_metadata(path, model_name=None, model=None):
+
+    # Checks ------------------------------------------------------------------
+
+    if (model_name is None) == (model is None):
+        raise ValueError(
+            "User must either provide 'model_name' or 'model', but not both"
+            )    
 
     # Nested function(s) ------------------------------------------------------    
 
@@ -86,6 +94,8 @@ def load_metadata(path, preview_level=None):
         "pixsize"  : [],
         "shape"    : [],
         "preview"  : [],
+        "mask"     : [],
+        "stats"    : [],
         }
         
     # Fetch metadata
@@ -94,7 +104,7 @@ def load_metadata(path, preview_level=None):
             xml = ET.fromstring(qptiff.get_channel_info()[0]["raw_xml"])
             page = qptiff.series[0].levels[level].pages[0]
             height, width = page.shape
-            pixsize = xml.find('.//PixelSizeMicrons')
+            pixsize = xml.find(".//PixelSizeMicrons")
             pixsize = float(pixsize.text) * 2 ** level
             metadata["channels"] = qptiff.get_biomarkers()
             metadata["level"   ].append(level)
@@ -103,17 +113,51 @@ def load_metadata(path, preview_level=None):
                 
     # Get view ROIs
     get_view_rois(path, metadata)
-    
-    # Get preview(s)
-    metadata
-    if preview_level is None:
-        preview_level = metadata["level"][-1]
+        
+    # Get preview(s)   
     for idx in range(len(metadata["roi"])):
+        
         preview = load_arr(
-            path, metadata=metadata, level=preview_level, roi_idx=idx)
-        metadata["preview"].append(np.stack(preview))
-    
+            path, metadata=metadata, level=4, roi_idx=idx) # Hard coded level 4
+        preview = np.stack(preview)
+        metadata["preview"].append(preview)
+        
+        # Get mask(s) 
+        if model is None:
+            model = UNet(parameters=None, model_path=Path.cwd() / model_name)
+        mask = model.predict(norm_pct(np.mean(preview, axis=0))) > 0.5
+        metadata["mask"].append(mask)
+        
+        # # Get statistics
+        # # for c, channel in enumerate(metadata["channels"]):
+        # #     metadata["stats"].append({
+        # #         "avg" : np.mean(preview[c]),
+        # #         "q10" : np.quantile(preview[c], 0.10),
+        # #         "q25" : np.quantile(preview[c], 0.25),
+        # #         "q75" : np.quantile(preview[c], 0.75),
+        # #         "q90" : np.quantile(preview[c], 0.90),
+        # #         })
+
+        # stats = {
+        #     "quantiles" : [],
+        #     }
+        
+        # for c, channel in enumerate(metadata["channels"]):
+            
+        #     img = preview[c]
+        #     avg = 
+        
+        # metadata["stats"].append({
+        #     "avg" : np.mean(preview[:, mask], axis=0),
+        #     "q10" : np.quantile(preview[:, mask], 0.10),
+        #     "q25" : np.quantile(preview[:, mask], 0.25),
+        #     "q75" : np.quantile(preview[:, mask], 0.75),
+        #     "q90" : np.quantile(preview[:, mask], 0.90),
+        #     })
+            
     return metadata
+
+#%% function(s) : load_arr() --------------------------------------------------
 
 def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
     
@@ -231,23 +275,30 @@ if __name__ == "__main__":
 
     # Parameters
     path = data_path / file_name
+    model_name = "model_256_binary_1024-43"
     channels = "all"
-    level = 3
-    idx = 0   
+    level = 4
+    idx = 0  
     
     # -------------------------------------------------------------------------
-        
+            
     t0 = time.time()
     print("load_metadata() : ", end="", flush=True)
-    metadata = load_metadata(path, preview_level=4)
+    metadata = load_metadata(path, model_name=model_name)
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
     
     # # Display
     # import napari
     # vwr = napari.Viewer()
-    # vwr.add_image(preview)
-    # vwr.add_image(mask, blending="additive", opacity=0.25, colormap="yellow")
+    # vwr.add_image(
+    #     metadata["preview"][idx],
+    #     gamma=0.3,
+    #     )
+    # vwr.add_image(
+    #     metadata["mask"][idx],
+    #     blending="additive", opacity=0.3, colormap="yellow",
+    #     )
     
     # -------------------------------------------------------------------------
     
@@ -264,3 +315,19 @@ if __name__ == "__main__":
     # import napari
     # vwr = napari.Viewer()
     # vwr.add_image(arr)
+    
+#%%
+
+    preview = metadata["preview"]
+    mask = metadata["mask"]
+    
+    stats = {
+        "quantiles" : [],
+        }
+    
+    for c, channel in enumerate(metadata["channels"]):
+        for q, quantile in enumerate(np.arange(0.1, 1.0, 0.1)):
+            
+    
+     
+    
