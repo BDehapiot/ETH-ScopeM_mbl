@@ -1,36 +1,14 @@
 #%% Imports -------------------------------------------------------------------
 
-import gc
 import pickle
-import numpy as np
-import pandas as pd
 from skimage import io
-import tensorflow as tf
 from pathlib import Path
 
 # functions
 from functions import (
     norm_12_to_8bits, norm_pct_8bits,
-    load_metadata, load_arr,
+    get_slide_metadata, load_view
     )
-
-# bdtools
-from bdtools.norm import norm_pct
-from bdtools.conn import lbl_conn
-from bdtools.unet.unet import UNet
-
-# skimage
-from skimage.transform import downscale_local_mean
-from skimage.measure import label, regionprops_table
-from skimage.segmentation import watershed, expand_labels
-from skimage.morphology import remove_small_objects, binary_erosion
-
-#%% Comments ------------------------------------------------------------------
-
-"""
-- Make normalization more robust, preview all image of same channel
-- Clarify how and where measurments are made
-"""
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -42,18 +20,11 @@ main_parameters = {
         ],
     
     # Paths
-    "data_path"       : Path("D:\local_mbl\data"),
-    "load_model0_name" : "model_256_binary_1024-43",
-    "load_model1_name" : "model_256_edt_1024-48",
-
-    # extract()
-    "preview_level"   : 4,
+    "data_path" : Path("D:\local_mbl\data"),
     
-    # process()
-    "process_level"   : 1,
-    "thresh_0"        : 0.25,
-    "thresh_1"        : 0.50,
-        
+    # Preview
+    "pvw_level" : 4,
+
     }
 
 #%% Class(Main) ---------------------------------------------------------------
@@ -68,8 +39,6 @@ class Main:
         # Run
         self.initialize()
         self.extract()
-        # self.process()
-        # self.analyse()
         
 #%% Class(Main) : initialize() ------------------------------------------------
 
@@ -77,203 +46,45 @@ class Main:
         
         # Paths
         self.qpt_paths = list(self.data_path.glob("*unmixed.qptiff"))
-        self.sld_paths = [
-            self.data_path / f"{path.stem[:12]}"
-            for path in self.qpt_paths
-            ]
-       
-        # Setup slide directory
-        for sld_path in self.sld_paths:
-            if not sld_path.exists():
-                sld_path.mkdir(parents=True, exist_ok=True) 
 
 #%% Class(Main) : extract() ---------------------------------------------------
 
     def extract(self):
-        
-        unet0 = UNet(
-            parameters=None, 
-            model_path=Path.cwd() / self.load_model0_name
-            )
-        
-        self.vws_paths = [] 
+                
+        self.mtd_paths, self.vws_paths = [], []
         for p, path in enumerate(self.qpt_paths): 
-
-            sld_path = self.sld_paths[p]
-            mtd_path = sld_path / "metadata.pkl"
-            pvw_path = sld_path / "preview.tif"
-            msk_path = sld_path / "mask.tif"
             
             # Metadata
+            mtd_name = str(path.name).replace(".qptiff", "_metadata.pkl")
+            mtd_path = self.data_path / mtd_name
+            self.mtd_paths.append(mtd_path)
+            
             if not mtd_path.exists():
-                print(f"Main() : extract() : {path.name}")
-                mtd = load_metadata(path, model=unet0)
+                print(f"Main() : metadata : {path.name}")
+                mtd = get_slide_metadata(path)
                 with open(mtd_path, "wb") as file:
                     pickle.dump(mtd, file)
             else:
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
-        
-            # Preview & mask
-            if not pvw_path.exists():
-                                    
-                for idx in range(len(mtd["roi"])):
-                    pvw = mtd["preview"][idx]
-                    msk = mtd["mask"   ][idx]
-                    pvw = np.mean(pvw, axis=0)
-                    pvw = norm_pct_8bits(pvw)
-                    msk = norm_pct_8bits(msk)
-                    new_str = f"_{idx:02d}_level-{self.preview_level}.tif"
-                    io.imsave(
-                        str(pvw_path).replace(".tif", new_str), 
-                        pvw, check_contrast=False
+                    
+            # Previews
+            for view_idx in range(len(mtd["roi"])):
+                vws_name = str(path.name).replace(".qptiff", f"_view_{view_idx:02d}")
+                vws_path = self.data_path / vws_name
+                self.vws_paths.append(vws_path)
+                
+                if not vws_path.exists():
+                    print(f"Main() : preview : {vws_path.name}")
+                    vws_path.mkdir(parents=True, exist_ok=True) 
+                    pvw = load_view(
+                        path, metadata=mtd, channels="all", 
+                        level=self.pvw_level, view_idx=view_idx,
                         )
                     io.imsave(
-                        str(msk_path).replace(".tif", new_str), 
-                        msk, check_contrast=False
-                        )
-                    
-            # # View(s)
-            # for idx in range(len(mtd["roi"])):
-                
-            #     # Setup view directory
-            #     vws_path = sld_path / f"view_{idx:02d}"
-            #     self.vws_paths.append(vws_path)
-            #     if not vws_path.exists():
-            #         vws_path.mkdir(parents=True, exist_ok=True) 
-                
-            #     # DAPI at level 0 (for predictions)
-            #     dap_path = vws_path / "dapi_level-0.tif"
-            #     if not dap_path.exists():
-            #         dap = load_arr(
-            #             path, metadata=mtd, 
-            #             channels="DAPI", level=0, roi_idx=idx,
-            #             )
-            #         dap = norm_pct_8bits(dap)
-            #         io.imsave(dap_path, dap, check_contrast=False)
-                    
-            #     # Stack at process level 
-            #     stk_path = vws_path / f"stack_level-{self.process_level}.tif"
-            #     if not stk_path.exists():
-            #         stk = load_arr(
-            #             path, metadata=mtd, 
-            #             channels="all", level=self.process_level, roi_idx=idx,
-            #             )
-            #         stk = norm_pct_8bits(stk)
-            #         io.imsave(stk_path, stk, check_contrast=False)                               
+                        vws_path / "preview.tif", pvw, check_contrast=False)
                         
-#%% Class(Main) : process() ---------------------------------------------------
-
-    def process(self):
-
-        for p, path in enumerate(self.vws_paths):
-            dap_path = path / "dapi_level-0.tif"
-            msk_path = path / f"mask_level-{self.process_level}.tif"
-            prp_path = path / f"props_level-{self.process_level}.pkl"
-
-            # if not msk_path.exists():
-            if p == 0:
-                print(f"Main() : process() : {path.parent.name}/{path.name}")
-                
-                if "unet" not in locals():
-                    unet = UNet(
-                        parameters=None, 
-                        model_path=Path.cwd() / self.load_model1_name
-                        )
-                
-                # Load
-                dap = io.imread(dap_path)
-                dap = dap.astype("float32") / 255
-            
-                # Predict
-                prd = unet.predict(dap)
-                dscale_factor = 2 ** self.process_level
-                prd = downscale_local_mean(prd, dscale_factor)
-                
-                # Get mask
-                msk_0 = prd > self.thresh_0
-                msk_1 = prd > self.thresh_1
-                msk = watershed(-prd, label(msk_1), mask=msk_0)
-                msk[lbl_conn(msk, conn=2) == 2] = 0
-                msk = remove_small_objects(
-                    msk, min_size=0.5 * (2 ** self.process_level) ** 2)
-                msk = ((msk > 0) * 255).astype("uint8")
-                
-                # Get centroids
-                prp = regionprops_table(
-                    label(msk), properties=("label", "centroid"),
-                    )
-                prp["y"] = prp.pop("centroid-0").astype("int32")
-                prp["x"] = prp.pop("centroid-1").astype("int32")
-                              
-                # Save & clear
-                io.imsave(msk_path, msk, check_contrast=False)
-                with open(prp_path, "wb") as file:
-                    pickle.dump(prp, file)
-                tf.keras.backend.clear_session()
-                gc.collect()
-            
-#%% Class(Main) : analyse() ---------------------------------------------------
-
-    def analyse(self):
-        
-        for p, path in enumerate(self.view_paths):
-            msk_path = path / f"mask_level-{self.process_level}.tif"
-            stk_path = path / f"stack_level-{self.process_level}.tif"
-            results_path = path / f"results_level-{self.process_level}.csv"
-            
-            if not results_path.exists():
-                print(f"Main() : analyse() : {path.parent.name}/{path.name}")
-                
-                msk = io.imread(msk_path) > 0
-                stk = io.imread(stk_path)
-                
-                # Measure intensities
-                msk = expand_labels(
-                    label(msk), distance=1 * (2 ** self.process_level) ** 2)
-                results = regionprops_table(
-                    msk, intensity_image=np.moveaxis(stk, 0, -1), 
-                    properties=("label", "intensity_mean"),
-                    )
-                results.pop("label", None)
-                results = {
-                    channel : value 
-                    for channel, value 
-                    in zip(self.channels, results.values())
-                    }
-                results = pd.DataFrame(results)
-                results.to_csv(results_path, index=False)
-                    
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-
-#%%
-
-    # import time
-    
-    # # -------------------------------------------------------------------------
-
-    # view_idx = 0
-    # channels = main_parameters["channels"]
-    # distance = 3 * (2 ** main.process_level) ** 2
-    # msk_path = main.vws_paths[view_idx] / f"mask_level-{main.process_level}.tif"
-    # stk_path = main.vws_paths[view_idx] / f"stack_level-{main.process_level}.tif"
-    # msk = io.imread(msk_path)
-    # stk = io.imread(stk_path)
-    
-    # # -------------------------------------------------------------------------
-
-    # t0 = time.time()
-    # print("regionprops_table() : ", end="", flush=False)
-
-    # results = regionprops_table(
-    #     label(msk), properties=("label", "centroid"),
-    #     )
-    
-    # t1 = time.time()
-    # print(f"{t1 - t0:.3f}s")
-    
-    # results["y"] = results.pop("centroid-0")
-    # results["x"] = results.pop("centroid-1")

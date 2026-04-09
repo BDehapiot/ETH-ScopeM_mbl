@@ -7,14 +7,13 @@ import xml.etree.ElementTree as ET
 
 # bdtools
 from bdtools.norm import norm_pct
-from bdtools.unet.unet import UNet
 
 # skimage
+from skimage.measure import label, regionprops
 from skimage.filters import gaussian, threshold_otsu
-from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
         
-#%% function(s) : tools -------------------------------------------------------
+#%% function(s) : normalization -----------------------------------------------
 
 def norm_12_to_8bits(arr):
     return ((arr + 8) / 16).astype("uint8")
@@ -27,16 +26,9 @@ def norm_pct_8bits(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
         return arr
 
-#%% function(s) : load_metadata() ---------------------------------------------
+#%% function(s) : get_slide_metadata() ----------------------------------------
         
-def load_metadata(path, model_name=None, model=None):
-
-    # Checks ------------------------------------------------------------------
-
-    if (model_name is None) == (model is None):
-        raise ValueError(
-            "User must either provide 'model_name' or 'model', but not both"
-            )    
+def get_slide_metadata(path):
 
     # Nested function(s) ------------------------------------------------------    
 
@@ -93,9 +85,6 @@ def load_metadata(path, model_name=None, model=None):
         "level"    : [],
         "pixsize"  : [],
         "shape"    : [],
-        "preview"  : [],
-        "mask"     : [],
-        "stats"    : [],
         }
         
     # Fetch metadata
@@ -114,74 +103,33 @@ def load_metadata(path, model_name=None, model=None):
     # Get view ROIs
     get_view_rois(path, metadata)
         
-    # Get preview(s)   
-    for idx in range(len(metadata["roi"])):
-        
-        preview = load_arr(
-            path, metadata=metadata, level=4, roi_idx=idx) # Hard coded level 4
-        preview = np.stack(preview)
-        metadata["preview"].append(preview)
-        
-        # Get mask(s) 
-        if model is None:
-            model = UNet(parameters=None, model_path=Path.cwd() / model_name)
-        mask = model.predict(norm_pct(np.mean(preview, axis=0))) > 0.5
-        metadata["mask"].append(mask)
-        
-        # # Get statistics
-        # # for c, channel in enumerate(metadata["channels"]):
-        # #     metadata["stats"].append({
-        # #         "avg" : np.mean(preview[c]),
-        # #         "q10" : np.quantile(preview[c], 0.10),
-        # #         "q25" : np.quantile(preview[c], 0.25),
-        # #         "q75" : np.quantile(preview[c], 0.75),
-        # #         "q90" : np.quantile(preview[c], 0.90),
-        # #         })
-
-        # stats = {
-        #     "quantiles" : [],
-        #     }
-        
-        # for c, channel in enumerate(metadata["channels"]):
-            
-        #     img = preview[c]
-        #     avg = 
-        
-        # metadata["stats"].append({
-        #     "avg" : np.mean(preview[:, mask], axis=0),
-        #     "q10" : np.quantile(preview[:, mask], 0.10),
-        #     "q25" : np.quantile(preview[:, mask], 0.25),
-        #     "q75" : np.quantile(preview[:, mask], 0.75),
-        #     "q90" : np.quantile(preview[:, mask], 0.90),
-        #     })
-            
     return metadata
 
-#%% function(s) : load_arr() --------------------------------------------------
+#%% function(s) : load_view() -------------------------------------------------
 
-def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
+def load_view(path, metadata=None, channels="all", level=4, view_idx=None):
     
     # Nested function(s) ------------------------------------------------------
     
     def get_position():
         roi = metadata["roi"]
         return (
-            roi[roi_idx][level][2], 
-            roi[roi_idx][level][0],
+            roi[view_idx][level][2], 
+            roi[view_idx][level][0],
             )  
     
     def get_shape():
         roi = metadata["roi"]
         return (
-            roi[roi_idx][level][3] - roi[roi_idx][level][2],
-            roi[roi_idx][level][1] - roi[roi_idx][level][0],
+            roi[view_idx][level][3] - roi[view_idx][level][2],
+            roi[view_idx][level][1] - roi[view_idx][level][0],
             )
 
     # Execute -----------------------------------------------------------------
     
     # Load metadata
     if metadata is None:
-        metadata = load_metadata(path)
+        metadata = get_slide_metadata(path)
     
     # Get channels
     if channels == "all":
@@ -193,7 +141,7 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
     arr = []
     with QPTiffFile(path) as qptiff:
         for channel in channels:
-            if roi_idx is not None:
+            if view_idx is not None:
                 arr.append(qptiff.read_region(
                     channel, level=level,
                     pos=get_position(),
@@ -205,43 +153,6 @@ def load_arr(path, metadata=None, channels="all", level=4, roi_idx=None):
                     ))
                 
     return np.stack(arr).squeeze()
-
-#%% function(s) : crop --------------------------------------------------------
-
-def get_crops(stk, msk, prp=None, crop_size=32):
-
-    if prp is None:
-        
-        # Get centroids
-        prp = regionprops_table(
-            label(msk), properties=("label", "centroid"),
-            )
-        prp["y"] = prp.pop("centroid-0").astype("int32")
-        prp["x"] = prp.pop("centroid-1").astype("int32")
-        
-    # Normalize (0 to 1)
-    if np.issubdtype(stk.dtype, np.integer):
-        stk = stk.astype("float32") / 255
-    
-    # Pad (acc. to crop half size)
-    chs = crop_size // 2 # crop half size
-    pad_width = ((0, 0), (chs, chs), (chs, chs))
-    stk = np.pad(stk, pad_width=pad_width, mode="reflect")
-
-    # Extract crops
-    crops = []
-    for (y, x) in zip(prp["y"], prp["x"]):
-        y0 = y; y1 = y + crop_size
-        x0 = x; x1 = x + crop_size
-        if y1 - y0 != crop_size:
-            print(y0, y1)
-        if x1 - x0 != crop_size:
-            print(x0, x1)
-        crops.append(
-            np.swapaxes(stk[..., y0:y1, x0:x1], 0, -1)
-            )
-        
-    return np.stack(crops)
 
 #%% Execute -------------------------------------------------------------------
 
@@ -275,59 +186,30 @@ if __name__ == "__main__":
 
     # Parameters
     path = data_path / file_name
-    model_name = "model_256_binary_1024-43"
     channels = "all"
     level = 4
-    idx = 0  
+    view_idx = 0
     
     # -------------------------------------------------------------------------
             
     t0 = time.time()
-    print("load_metadata() : ", end="", flush=True)
-    metadata = load_metadata(path, model_name=model_name)
+    print("get_slide_metadata() : ", end="", flush=True)
+    mtd = get_slide_metadata(path)
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
     
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     metadata["preview"][idx],
-    #     gamma=0.3,
-    #     )
-    # vwr.add_image(
-    #     metadata["mask"][idx],
-    #     blending="additive", opacity=0.3, colormap="yellow",
-    #     )
-    
     # -------------------------------------------------------------------------
     
-    # t0 = time.time()
-    # print("load_arr() : ", end="", flush=True)
-    # arr = load_arr(
-    #     path, metadata=metadata, 
-    #     channels=channels, level=level, roi_idx=idx,
-    #     )
-    # t1 = time.time()
-    # print(f"{t1 - t0:.3f}s")
-
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(arr)
+    t0 = time.time()
+    print("load_view() : ", end="", flush=True)
+    vws = load_view(
+        path, metadata=mtd, 
+        channels=channels, level=level, view_idx=view_idx
+        )
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
     
-#%%
-
-    preview = metadata["preview"]
-    mask = metadata["mask"]
-    
-    stats = {
-        "quantiles" : [],
-        }
-    
-    for c, channel in enumerate(metadata["channels"]):
-        for q, quantile in enumerate(np.arange(0.1, 1.0, 0.1)):
-            
-    
-     
-    
+    # Display
+    import napari
+    vwr = napari.Viewer()
+    vwr.add_image(vws, gamma=0.5)

@@ -16,15 +16,15 @@ from bdtools.patch import extract_patches
 unet_parameters = {
     
     # Procedure
-    "run_patches_0" : 0, # new
-    "run_annotate"  : 0,
-    "run_train"     : 1,
+    "run_patches"  : 1, # new
+    "run_annotate" : 0,
+    "run_train"    : 0,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train_preview", 
     
     # extract_patches()
-    "n_patches"             : 10, # save n_patches per DAPI image
+    "n_patches"             : 10, # save n_patches per preview image
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
     
@@ -35,7 +35,7 @@ unet_parameters = {
     "model_name"         : None,
 
     # Build
-    "input_shape"        : (None, None, 1),
+    "input_shape"        : (None, None, 8),
     "backbone"           : "resnet18",
     "activation"         : "sigmoid",
         
@@ -83,14 +83,19 @@ class TrainPreview:
 
 #%% Class(Train) extract_patches() --------------------------------------------
 
-    def extract_patches_0(self):
+    def extract_patches(self):
         
-        pvw_paths = self.main.data_path.rglob("preview*")
+        pvw_paths = self.main.data_path.rglob("preview.tif")
         
         for p, path in enumerate(pvw_paths):
             pvw = io.imread(path)
+            
             patches = extract_patches(
-                pvw, self.extract_patch_size, self.extract_patch_overlap)
+                pvw, 
+                self.extract_patch_size, 
+                self.extract_patch_overlap, 
+                multichannel=True
+                )
             idxs =  np.random.choice(
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
             for idx in idxs:
