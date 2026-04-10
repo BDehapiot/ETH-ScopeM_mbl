@@ -16,17 +16,25 @@ from skimage.morphology import disk, binary_closing, remove_small_objects
 #%% function(s) : normalization -----------------------------------------------
 
 def norm_12_to_8bits(arr):
-    return ((arr + 8) / 16).astype("uint8")
-
+    if arr.ndim == 2:
+        return ((arr + 8) / 16).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = ((img + 8) / 16).astype("uint8")
+        return arr  
+            
 def norm_pct_8bits(arr):
     if arr.ndim == 2:
         return (norm_pct(arr) * 255).astype("uint8")
     elif arr.ndim == 3:
         for i, img in enumerate(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
-        return arr
+        return arr   
+    
+def prep_preview(pvw, channels=[2, 5, 6]):
+    return np.mean(norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
 
-#%% function(s) : get_slide_metadata() ----------------------------------------
+#%% function(s) : get_slide_metadata() ---- ------------------------------------
         
 def get_slide_metadata(path):
 
@@ -165,10 +173,10 @@ if __name__ == "__main__":
     
     # Paths
     data_path = Path("D:\local_mbl\data")
-    file_name = "251126_D7_S2_Scan1_unmixed.qptiff"
+    # file_name = "251126_D7_S2_Scan1_unmixed.qptiff"
     # file_name = "251126_E2_S2_Scan1_unmixed.qptiff"
     # file_name = "251126_E6_S2_Scan1_unmixed.qptiff"
-    # file_name = "251126_E7_S2_Scan1_unmixed.qptiff"
+    file_name = "251126_E7_S2_Scan1_unmixed.qptiff"
     # file_name = "251127_D1_S2_Scan1_unmixed.qptiff"
     # file_name = "251127_D2_S2_Scan1_unmixed.qptiff"
     # file_name = "251127_D3_S2_Scan1_unmixed.qptiff"
@@ -208,6 +216,8 @@ if __name__ == "__main__":
         )
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
+    
+    vws = prep_preview(vws)
     
     # Display
     import napari

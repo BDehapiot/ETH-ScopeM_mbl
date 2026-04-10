@@ -11,14 +11,17 @@ from bdtools.unet.unet import UNet
 from bdtools.annotate import Annotate
 from bdtools.patch import extract_patches
 
+# functions
+from functions import prep_preview
+
 #%% Inputs --------------------------------------------------------------------
 
 unet_parameters = {
     
     # Procedure
-    "run_patches"  : 1, # new
+    "run_patches"  : 0, # new
     "run_annotate" : 0,
-    "run_train"    : 0,
+    "run_train"    : 1,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train_preview", 
@@ -32,10 +35,10 @@ unet_parameters = {
     
     # Paths
     "root_path"          : None,
-    "model_name"         : None,
+    "model_name"         : "model_256_binary_1024-56",
 
     # Build
-    "input_shape"        : (None, None, 8),
+    "input_shape"        : (None, None, 1),
     "backbone"           : "resnet18",
     "activation"         : "sigmoid",
         
@@ -44,7 +47,7 @@ unet_parameters = {
     "batch_size"         : 64,
     "validation_split"   : 0.2,
     "metric"             : "soft_dice_coef",
-    "learning_rate"      : 0.001,
+    "learning_rate"      : 0.0001,
     "patience"           : 64,
 
     # Prepare
@@ -74,8 +77,8 @@ class TrainPreview:
                 setattr(self, key, val)
                 
         # Run
-        if self.run_patches_0:
-            self.extract_patches_0()
+        if self.run_patches:
+            self.extract_patches()
         if self.run_annotate:
             self.annotate()
         if self.run_train:
@@ -88,7 +91,9 @@ class TrainPreview:
         pvw_paths = self.main.data_path.rglob("preview.tif")
         
         for p, path in enumerate(pvw_paths):
+            
             pvw = io.imread(path)
+            pvw = prep_preview(pvw, channels=[2, 5, 6])
             
             patches = extract_patches(
                 pvw, 
@@ -100,10 +105,8 @@ class TrainPreview:
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
             for idx in idxs:
                 patch_name = (
-                    f"{str(path.parent.parent.name)}_"
                     f"{str(path.parent.name)}_"
-                    f"{path.stem}_"
-                    f"{idx:05d}.tif"
+                    f"patch_{idx:05d}.tif"
                     )
                 io.imsave(
                     self.train_path / patch_name,

@@ -6,9 +6,12 @@ from pathlib import Path
 
 # functions
 from functions import (
-    norm_12_to_8bits, norm_pct_8bits,
-    get_slide_metadata, load_view
+    norm_12_to_8bits, norm_pct_8bits, prep_preview,
+    get_slide_metadata, load_view,
     )
+
+# bdtools
+from bdtools.unet.unet import UNet
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -21,8 +24,9 @@ main_parameters = {
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
+    "model_preview_name" : "model_256_binary_1024-56",
     
-    # Preview
+    # extract()
     "pvw_level" : 4,
 
     }
@@ -50,11 +54,11 @@ class Main:
 #%% Class(Main) : extract() ---------------------------------------------------
 
     def extract(self):
-                
-        self.mtd_paths, self.vws_paths = [], []
+           
+        # Metadata
+        self.mtd_paths = []
         for p, path in enumerate(self.qpt_paths): 
-            
-            # Metadata
+
             mtd_name = str(path.name).replace(".qptiff", "_metadata.pkl")
             mtd_path = self.data_path / mtd_name
             self.mtd_paths.append(mtd_path)
@@ -68,9 +72,16 @@ class Main:
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
                     
-            # Previews
+        # Previews
+        self.vws_paths = []
+        for p, path in enumerate(self.qpt_paths): 
+            
+            with open(self.mtd_paths[p], "rb") as file:
+                mtd = pickle.load(file)
+            
             for view_idx in range(len(mtd["roi"])):
-                vws_name = str(path.name).replace(".qptiff", f"_view_{view_idx:02d}")
+                
+                vws_name = str(path.name).replace(".qptiff", f"_{view_idx:02d}")
                 vws_path = self.data_path / vws_name
                 self.vws_paths.append(vws_path)
                 
@@ -83,6 +94,28 @@ class Main:
                         )
                     io.imsave(
                         vws_path / "preview.tif", pvw, check_contrast=False)
+                    
+        # Masks
+        self.msk_paths = []
+        for p, path in enumerate(self.vws_paths): 
+                            
+            msk_path = path / "mask.tif"
+            self.msk_paths.append(msk_path) 
+                        
+            if not msk_path.exists():
+                print(f"Main() : mask : {path.name}")
+                
+                if "unet_preview" not in locals():
+                    unet_preview = UNet(
+                        parameters=None, 
+                        model_path=Path.cwd() / self.model_preview_name
+                        )
+                
+                pvw = prep_preview(io.imread(path / "preview.tif"))
+                pvw = pvw.astype("float32") / 255
+                msk = norm_pct_8bits(unet_preview.predict(pvw) > 0.5)
+                io.imsave(
+                    path / "mask.tif", msk, check_contrast=False)
                         
 #%% Execute -------------------------------------------------------------------
 
