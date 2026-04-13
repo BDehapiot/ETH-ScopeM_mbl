@@ -34,7 +34,7 @@ def norm_pct_8bits(arr):
 def prep_preview(pvw, channels=[2, 5, 6]):
     return np.mean(norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
 
-#%% function(s) : get_slide_metadata() ---- ------------------------------------
+#%% function(s) : get_slide_metadata() ----------------------------------------
         
 def get_slide_metadata(path):
 
@@ -161,6 +161,26 @@ def load_view(path, metadata=None, channels="all", level=4, view_idx=None):
                     ))
                 
     return np.stack(arr).squeeze()
+
+#%% function(s) : get_statistics() --------------------------------------------
+
+def get_statistics(pvw, msk):
+    msk = msk > 0
+    sts = {"avg" : [], "med" : [], "std" : [], "qtl" : []}
+    avg, med, std, qtl = [], [], [], []
+    for channel in range(pvw.shape[0]):
+        qt = []
+        avg.append(np.mean(pvw[channel][msk]))
+        med.append(np.median(pvw[channel][msk]))
+        std.append(np.std(pvw[channel][msk]))            
+        for q in np.arange(0.1, 1.0, 0.1):
+            qt.append(np.quantile(pvw[channel][msk], q))
+        qtl.append(qt)
+    sts["avg"] = np.stack(avg)
+    sts["med"] = np.stack(med)
+    sts["std"] = np.stack(std)
+    sts["qtl"] = np.stack(qtl)
+    return sts
 
 #%% Execute -------------------------------------------------------------------
 

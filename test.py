@@ -4,9 +4,10 @@ import napari
 import numpy as np
 from skimage import io
 from pathlib import Path
+import matplotlib.pyplot as plt
 
 # function(s)
-from functions import norm_pct_8bits
+from functions import norm_pct_8bits, prep_preview, get_statistics
 
 #%% Function(s) ---------------------------------------------------------------
 
@@ -24,9 +25,6 @@ def pad_images(imgs):
             np.pad(img, padding, mode="constant", constant_values=0))
     return imgs_padded
 
-def prep_preview(pvw, channels=[2, 5, 6]):
-    return np.mean(norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
-
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -39,36 +37,13 @@ if __name__ == "__main__":
     # Parameters
     channels = [2, 5, 6]
     
-#%% Prepare previews ----------------------------------------------------------
-
-    # # Load previews
-    # pvws = []
-    # for path in pvw_paths:
-    #     pvw = io.imread(path)
-    #     pvw = prep_preview(pvw, channels=channels)
-    #     pvws.append(pvw)
-            
-    # # Pad
-    # pvws = pad_images(pvws)
-    
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     np.stack(pvws), name="pvws", visible=1,
-    #     blending="additive",
-    #     gamma=1.0,
-    #     )
-    
-#%% Check masks ---------------------------------------------------------------
-
-    # # Load data
-    # pvws, msks = [], []
-    # for pvw_path, msk_path in zip(pvw_paths, msk_paths):
-    #     pvw = io.imread(pvw_path)
-    #     msk = io.imread(msk_path)
-    #     pvw = prep_preview(pvw, channels=channels)
-    #     pvws.append(pvw)
-    #     msks.append(msk)
+    # Load data
+    pvws, msks = [], []
+    for pvw_path, msk_path in zip(pvw_paths, msk_paths):
+        pvw = io.imread(pvw_path)
+        msk = io.imread(msk_path)
+        pvws.append(pvw)
+        msks.append(msk)
         
     # # Pad
     # pvws = pad_images(pvws)
@@ -86,35 +61,34 @@ if __name__ == "__main__":
     #     blending="additive", colormap="yellow",
     #     opacity=0.25,
     #     )
-
-#%% Get stats -----------------------------------------------------------------
-
-    # Load data
-    pvws, msks = [], []
-    for pvw_path, msk_path in zip(pvw_paths, msk_paths):
-        pvw = io.imread(pvw_path)
-        msk = io.imread(msk_path)
-        pvws.append(pvw)
-        msks.append(msk)
         
-    # Get statistics
-    
-    stats = {
-        "avg" : [],
-        "med" : [],
-        "std" : [],
-        "qtl" : [],
-        }
-    
-    for pvw, msk in zip(pvws, msks):
-        
-        for img in pvw:
+    # Get statistics 
+    stss = [get_statistics(pvw, msk) for (pvw, msk) in zip(pvws, msks)]
+                
+#%% Normalize -----------------------------------------------------------------
 
-            stats["avg"].append(np.mean(img[msk]))
-            stats["med"].append(np.median(img[msk]))
-            stats["std"].append(np.std(img[msk]))
-            
-            quantiles = []
-            for q, qtl in enumerate(np.arange(0.1, 1.0, 0.1)):
-                quantiles.append(np.quantile(img[msk], qtl))
-            stats["qtl"].append(quantiles)
+    # Parameters
+    channel = 0 
+    pvw_level = 4
+    dap_level = 1
+
+    # Normalize
+    imgs = []
+    for pvw, msk, sts in zip(pvws, msks, stss):
+        img = pvw[channel].astype("float32")
+        avg = sts["avg"][channel]
+        std = sts["std"][channel]
+        img -= avg
+        img /= std
+        imgs.append(img)
+        
+    # Pad
+    imgs = pad_images(imgs)
+    
+    # Display
+    vwr = napari.Viewer()
+    vwr.add_image(
+        np.stack(imgs), name="imgs", visible=1,
+        blending="additive",
+        gamma=0.75,
+        )
