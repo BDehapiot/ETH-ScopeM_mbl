@@ -12,7 +12,7 @@ from bdtools.annotate import Annotate
 from bdtools.patch import extract_patches
 
 # functions
-from functions import prep_preview
+from functions import norm_preview
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -93,7 +93,7 @@ class TrainPreview:
         for p, path in enumerate(pvw_paths):
             
             pvw = io.imread(path)
-            pvw = prep_preview(pvw, channels=[2, 5, 6])
+            pvw = norm_preview(pvw, channels=[2, 5, 6], dtype="uint8")
             
             patches = extract_patches(
                 pvw, 
@@ -101,12 +101,14 @@ class TrainPreview:
                 self.extract_patch_overlap, 
                 multichannel=True
                 )
-            idxs =  np.random.choice(
+            
+            idxs = np.random.choice(
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
+            
             for idx in idxs:
                 patch_name = (
                     f"{str(path.parent.name)}_"
-                    f"patch_{idx:05d}.tif"
+                    f"preview_patch_{idx:05d}.tif"
                     )
                 io.imsave(
                     self.train_path / patch_name,

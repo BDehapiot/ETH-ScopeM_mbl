@@ -6,9 +6,10 @@ from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
 # bdtools
-from bdtools.norm import norm_pct
+from bdtools.norm import norm_gcn, norm_pct
 
 # skimage
+from skimage.transform import rescale
 from skimage.measure import label, regionprops
 from skimage.filters import gaussian, threshold_otsu
 from skimage.morphology import disk, binary_closing, remove_small_objects
@@ -31,8 +32,23 @@ def norm_pct_8bits(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
         return arr   
     
-def prep_preview(pvw, channels=[2, 5, 6]):
-    return np.mean(norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
+def norm_preview(pvw, channels=[2, 5, 6], dtype="uint8"):
+    if dtype == "uint8":
+        return np.mean(
+            norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
+    elif dtype == "float32":
+        return np.mean(
+            norm_pct(pvw)[channels, ...], axis=0).astype("float32") 
+
+def norm_dapi(dap, msk, dap_level=1, pvw_level=4, dtype="uint8"):
+    msk = msk > 0
+    rfactor = 2 ** (pvw_level - dap_level)
+    msk = rescale(msk, rfactor, order=0)     
+    msk = norm_pct(norm_gcn(dap, mask=msk), mask=msk)
+    if dtype == "uint8":
+        return (msk * 255).astype("uint8")
+    elif dtype == "float32":
+        return msk.astype("float32")
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -236,8 +252,6 @@ if __name__ == "__main__":
         )
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
-    
-    vws = prep_preview(vws)
     
     # Display
     import napari

@@ -7,7 +7,7 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 # function(s)
-from functions import norm_pct_8bits, prep_preview, get_statistics
+from functions import norm_pct_8bits, norm_preview, get_statistics
 
 #%% Function(s) ---------------------------------------------------------------
 
@@ -65,30 +65,24 @@ if __name__ == "__main__":
     # Get statistics 
     stss = [get_statistics(pvw, msk) for (pvw, msk) in zip(pvws, msks)]
                 
-#%% Normalize -----------------------------------------------------------------
+#%% Dapi ----------------------------------------------------------------------
 
-    # Parameters
-    channel = 0 
-    pvw_level = 4
-    dap_level = 1
-
-    # Normalize
-    imgs = []
-    for pvw, msk, sts in zip(pvws, msks, stss):
-        img = pvw[channel].astype("float32")
-        avg = sts["avg"][channel]
-        std = sts["std"][channel]
-        img -= avg
-        img /= std
-        imgs.append(img)
+    # Paths
+    dap_paths = list(data_path.rglob("dapi.tif"))
+    
+    # Load data
+    daps = []
+    for dap_path in dap_paths:
+        dap = io.imread(dap_path)
+        daps.append(dap)
         
     # Pad
-    imgs = pad_images(imgs)
-    
+    daps = pad_images(daps)
+        
     # Display
     vwr = napari.Viewer()
     vwr.add_image(
-        np.stack(imgs), name="imgs", visible=1,
+        np.stack(daps), name="daps", visible=1,
         blending="additive",
         gamma=0.75,
         )
