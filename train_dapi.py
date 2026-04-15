@@ -1,10 +1,14 @@
 #%% Imports -------------------------------------------------------------------
 
+import pickle
 import numpy as np
 np.random.seed(42)
 from skimage import io
 from pathlib import Path
 from main import Main, main_parameters
+
+# function(s)
+from functions import load_view, norm_data
 
 # bdtools
 from bdtools.unet.unet import UNet
@@ -17,9 +21,9 @@ unet_parameters = {
     
     # Procedure
     "run_patches_0" : 0, # new
-    "run_patches_1" : 0, # from preexisting masks
+    "run_patches_1" : 1, # from preexisting masks
     "run_annotate"  : 0,
-    "run_train"     : 1,
+    "run_train"     : 0,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train_dapi", 
@@ -64,7 +68,7 @@ unet_parameters = {
     
     }
 
-#%% Class(TrainDapi) -------------------------------------------------------
+#%% Class(TrainDapi) ----------------------------------------------------------
 
 class TrainDapi:
     def __init__(self, main, parameters=None):
@@ -88,31 +92,11 @@ class TrainDapi:
 
     def extract_patches_0(self):
         
-        dap_paths = self.main.data_path.rglob("dapi.tif")
+        """
+        to be implemented
+        """
         
-        for p, path in enumerate(dap_paths):
-            
-            dap = io.imread(path)
-            
-            patches = extract_patches(
-                dap, 
-                self.extract_patch_size, 
-                self.extract_patch_overlap, 
-                multichannel=True
-                )
-            
-            idxs = np.random.choice(
-                np.arange(0, len(patches)), size=self.n_patches, replace=False)
-            
-            for idx in idxs:
-                patch_name = (
-                    f"{str(path.parent.name)}_"
-                    f"dapi_patch_{idx:05d}.tif"
-                    )
-                io.imsave(
-                    self.train_path / patch_name,
-                    patches[idx], check_contrast=False,
-                    )
+        pass
                 
     def extract_patches_1(self):
         
@@ -120,22 +104,35 @@ class TrainDapi:
         
         for path in msk_paths:
             
-            # Parse stem
-            stem = path.stem
-            vws_path = self.main.data_path / stem[:29]
-            dap_path = vws_path / "dapi.tif"
-            idx = int(stem.split("_")[-2])
+            # Parse paths
+            qpt_path  = self.data_path / (path.stem[:26] + ".qptiff")
+            mtd_path  = self.data_path / (path.stem[:26] + "_metadata.pkl")
+            its_path  = self.data_path / path.stem[:29] / "intensities.pkl"
+            view_idx  = int(path.stem[27:29])
+            patch_idx = int(path.stem.split("_")[-2])
+                        
+            # Load
+            with open(mtd_path, "rb") as file:
+                mtd = pickle.load(file)
+            with open(its_path, "rb") as file:
+                its = pickle.load(file)
+            dap = load_view(
+                qpt_path, metadata=mtd, channels="DAPI", 
+                level=0, view_idx=view_idx,
+                )
+            dap = norm_data(dap, its, channel_idx=0)
             
-            # Extract & save patch
-            dapi = io.imread(dap_path)
+            # Extract patch
             patch = extract_patches(
-                dapi, self.extract_patch_size, self.extract_patch_overlap)[idx]
+                dap, self.extract_patch_size, self.extract_patch_overlap)[patch_idx]
+            
+            # Save
             patch_name = str(path).replace("_mask", "")
             io.imsave(
                 self.train_path / patch_name,
                 patch, check_contrast=False,
                 )
-                
+                            
 #%% Class(Train) annotate() ---------------------------------------------------
 
     def annotate(self):

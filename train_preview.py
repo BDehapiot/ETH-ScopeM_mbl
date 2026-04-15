@@ -12,7 +12,7 @@ from bdtools.annotate import Annotate
 from bdtools.patch import extract_patches
 
 # functions
-from functions import norm_preview
+from functions import prep_preview
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -88,15 +88,16 @@ class TrainPreview:
 
     def extract_patches(self):
         
-        pvw_paths = self.main.data_path.rglob("preview.tif")
+        pvw_paths = self.main.data_path.rglob("preview_raw.tif")
         
         for p, path in enumerate(pvw_paths):
             
             pvw = io.imread(path)
-            pvw = norm_preview(pvw, channels=[2, 5, 6], dtype="uint8")
+            pvw_prp = prep_preview(pvw, channels=[2, 5, 6])
+            pvw_prp = (pvw_prp * 255).astype("uint8")
             
             patches = extract_patches(
-                pvw, 
+                pvw_prp, 
                 self.extract_patch_size, 
                 self.extract_patch_overlap, 
                 multichannel=True

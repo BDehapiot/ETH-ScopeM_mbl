@@ -6,12 +6,14 @@ from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
 # bdtools
-from bdtools.norm import norm_gcn, norm_pct
+from bdtools.conn import lbl_conn
+from bdtools.norm import norm_pct
 
 # skimage
-from skimage.transform import rescale
-from skimage.measure import label, regionprops
+from skimage.segmentation import watershed
+from skimage.transform import downscale_local_mean
 from skimage.filters import gaussian, threshold_otsu
+from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
         
 #%% function(s) : normalization -----------------------------------------------
@@ -32,23 +34,46 @@ def norm_pct_8bits(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
         return arr   
     
-def norm_preview(pvw, channels=[2, 5, 6], dtype="uint8"):
-    if dtype == "uint8":
-        return np.mean(
-            norm_pct_8bits(pvw)[channels, ...], axis=0).astype("uint8")  
-    elif dtype == "float32":
-        return np.mean(
-            norm_pct(pvw)[channels, ...], axis=0).astype("float32") 
+def prep_preview(pvw, channels=[2, 5, 6]):
+    return np.mean(
+        norm_pct(pvw)[channels, ...], axis=0).astype("float32") 
 
-def norm_dapi(dap, msk, dap_level=1, pvw_level=4, dtype="uint8"):
-    msk = msk > 0
-    rfactor = 2 ** (pvw_level - dap_level)
-    msk = rescale(msk, rfactor, order=0)     
-    msk = norm_pct(norm_gcn(dap, mask=msk), mask=msk)
-    if dtype == "uint8":
-        return (msk * 255).astype("uint8")
-    elif dtype == "float32":
-        return msk.astype("float32")
+def norm_data(arr, its, channel_idx=None):
+    
+    if arr.ndim == 2 and channel_idx is None:
+        raise ValueError("please provide 'channel_idx' as int for 2D ndarray")   
+    
+    arr = arr.astype("float32")
+    
+    if arr.ndim == 2:
+        avg = its["avg"][channel_idx]
+        std = its["std"][channel_idx]
+        arr -= avg
+        arr /= std
+        arr = norm_pct(arr)
+        
+    elif arr.ndim == 3:
+        for channel_idx in range(arr.shape[0]):
+            avg = its["avg"][channel_idx]
+            std = its["std"][channel_idx]
+            arr[channel_idx] -= avg
+            arr[channel_idx] /= std
+            arr[channel_idx] = norm_pct(arr[channel_idx])
+    
+    return arr
+
+#%% function(s) : binary masks ------------------------------------------------
+
+def save_bin_mask(arr, path):
+    arr_bin = np.packbits(arr > 0)        
+    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
+
+def load_bin_mask(path):
+    with np.load(path) as loader:
+        arr_bin = loader["data"]
+        shape = loader["org_shape"]
+        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
+        return unpacked.reshape(shape).astype(np.uint8) * 255
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -178,11 +203,11 @@ def load_view(path, metadata=None, channels="all", level=4, view_idx=None):
                 
     return np.stack(arr).squeeze()
 
-#%% function(s) : get_statistics() --------------------------------------------
+#%% function(s) : get_intensities() -------------------------------------------
 
-def get_statistics(pvw, msk):
+def get_intensities(pvw, msk):
     msk = msk > 0
-    sts = {"avg" : [], "med" : [], "std" : [], "qtl" : []}
+    its = {"avg" : [], "med" : [], "std" : [], "qtl" : []}
     avg, med, std, qtl = [], [], [], []
     for channel in range(pvw.shape[0]):
         qt = []
@@ -192,11 +217,29 @@ def get_statistics(pvw, msk):
         for q in np.arange(0.1, 1.0, 0.1):
             qt.append(np.quantile(pvw[channel][msk], q))
         qtl.append(qt)
-    sts["avg"] = np.stack(avg)
-    sts["med"] = np.stack(med)
-    sts["std"] = np.stack(std)
-    sts["qtl"] = np.stack(qtl)
-    return sts
+    its["avg"] = np.stack(avg)
+    its["med"] = np.stack(med)
+    its["std"] = np.stack(std)
+    its["qtl"] = np.stack(qtl)
+    return its
+
+#%% function(s) : dapi --------------------------------------------------------
+    
+def get_dapi_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
+    # prd = downscale_local_mean(prd, 2 ** prc_level)
+    msk_0 = prd > thresh_0
+    msk_1 = prd > thresh_1
+    msk = watershed(-prd, label(msk_1), mask=msk_0)
+    msk[lbl_conn(msk, conn=2) == 2] = 0
+    msk = remove_small_objects(
+        msk, min_size=0.5 * (2 ** prc_level) ** 2)
+    return msk > 0
+
+def get_dapi_centroids(msk, prc_level=1):
+    ctd = regionprops_table(label(msk), properties=("label", "centroid"))
+    ctd["y"] = ctd.pop("centroid-0").astype("int32")
+    ctd["x"] = ctd.pop("centroid-1").astype("int32") 
+    return ctd
 
 #%% Execute -------------------------------------------------------------------
 
