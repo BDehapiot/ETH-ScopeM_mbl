@@ -91,11 +91,9 @@ class TrainDapi:
 #%% Class(Train) extract_patches() --------------------------------------------
 
     def extract_patches_0(self):
-        
         """
         to be implemented
         """
-        
         pass
                 
     def extract_patches_1(self):

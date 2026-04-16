@@ -61,41 +61,13 @@ if __name__ == "__main__":
     #     np.stack(msks), name="msks", visible=1,
     #     blending="additive", colormap="yellow",
     #     opacity=0.25,
-    #     )
+    #     )    
     
-#%%
+#%% Centroids -----------------------------------------------------------------
 
-    def save_bit_packing(arr, path):
-        arr_bin = np.packbits(arr)
-        np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
-        
-    def load_bit_packing(path):
-        loader = np.load(path)
-        arr_bin = loader["data"]
-        shape = loader["org_shape"]
-        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
-        return unpacked.reshape(shape) * 255
-
-    # Paths
     vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
-    dap_msk_path = vws_path / "dapi_mask.tif"
-    dap_msk_bin_path = vws_path / "dapi_mask.npz"
-    
-    # Load
-    dap_msk = io.imread(dap_msk_path)
-           
-    # Save bit-packing
-    save_bit_packing(dap_msk, dap_msk_bin_path)
-    
-    # Load bit-packing
-    dap_msk_bin = load_bit_packing(dap_msk_bin_path)
-    
-    # Display
-    vwr = napari.Viewer()
-    vwr.add_image(
-        dap_msk_bin, name="dap_msk", visible=1,
-        blending="additive",
-        )
-    
+    ctd_path = vws_path / "centroids.pkl"
+    with open(ctd_path, "rb") as file:
+        ctd = pickle.load(file)
     
     

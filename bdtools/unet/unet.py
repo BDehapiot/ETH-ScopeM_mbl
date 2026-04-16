@@ -112,40 +112,96 @@ class UNet:
 
 #%% Class(Unet) predict() -----------------------------------------------------
 
-    def predict(self, X):
+    def predict(self, X, patch_overlap=None, batch_size=32, chunk_size=None):
         
         # Initialize
-        Check(
-            X, name="X", 
-            ctype=(np.ndarray, list), dtype=float,
-            vrange=(0, 1),
-            )
-
-        # Prepare patches
+        if patch_overlap is None:
+            patch_overlap = self.patch_size // 2
         multichannel = True if self.input_shape[-1] > 1 else False
+        Check(X, name="X", ctype=(np.ndarray, list), dtype=float, vrange=(0, 1))
+        
+        # Convert X to list
         if isinstance(X, list):
-            prds = []
-            for arr_X in X:
-                X_patches = extract_patches(
-                    arr_X, self.patch_size, self.patch_overlap, 
-                    multichannel=multichannel
-                    )
-                X_patches = np.stack(X_patches)
-                prd = self.model.predict(X_patches, verbose=1).squeeze()
-                out_shape = arr_X.shape[:-1] if multichannel else arr_X.shape
-                prd = merge_patches(prd, out_shape, self.patch_overlap)
-                prds.append(prd)
-        if isinstance(X, np.ndarray):
-            X_patches = extract_patches(
-                X, self.patch_size, self.patch_overlap, 
-                multichannel=multichannel
-                )
-            X_patches = np.stack(X_patches)
-            prds = self.model.predict(X_patches, verbose=1).squeeze()
-            out_shape = X.shape[:-1] if multichannel else X.shape
-            prds = merge_patches(prds, out_shape, self.patch_overlap)
+            islist = True
+        else:
+            islist = False
+            X = [X]
                 
-        return prds
+        prds = []
+        for arr in X:
+            
+            shape = arr.shape[:-1] if multichannel else arr.shape
+            
+            # Extract patches
+            patches = np.stack(extract_patches(
+                arr, self.patch_size, patch_overlap, 
+                multichannel=multichannel
+                ))
+        
+            # Predict
+            
+            if chunk_size:
+                
+                n_chunks = int(np.ceil(patches.shape[0] / chunk_size))
+                print(f"n_chunks = {n_chunks}")
+                
+                prd = []
+                for i, idx in enumerate(range(0, len(patches), chunk_size)):
+                    chunk = patches[idx:idx + chunk_size]
+                    prd.append(
+                        self.model.predict(chunk, batch_size=batch_size))
+                prd = np.concatenate(prd, axis=0)
+                del chunk
+            
+            else:
+                
+                prd = self.model.predict(patches, batch_size=batch_size)
+                del patches
+                
+            # Merge patches
+            prd = prd.squeeze()
+            prd = merge_patches(prd, shape, patch_overlap)
+            prds.append(prd)
+    
+        return prds if islist else prds[0]
+        
+        # if isinstance(X, list): 
+            
+        #     prds = []
+        #     for arr_X in X:    
+        #         X_patches = np.stack(extract_patches(
+        #             arr_X, self.patch_size, self.patch_overlap, 
+        #             multichannel=multichannel
+        #             ))
+                
+        #         prd = self.model.predict(
+        #             X_patches, verbose=1, batch_size=batch_size).squeeze()
+        #         out_shape = arr_X.shape[:-1] if multichannel else arr_X.shape
+        #         prd = merge_patches(prd, out_shape, self.patch_overlap)
+        #         prds.append(prd)
+                
+        # if isinstance(X, np.ndarray):
+            
+        #     X_patches = np.stack(extract_patches(
+        #         X, self.patch_size, self.patch_overlap, 
+        #         multichannel=multichannel
+        #         ))
+            
+        #     prds = []
+        #     if chunk_size is not None:
+        #         for i in range(0, len(X_patches), chunk_size):
+        #             chunk = X_patches[i : i + chunk_size]
+        #             prd = self.model.predict(
+        #                 chunk, verbose=1, batch_size=batch_size).squeeze()
+        #             prds.append(prd)
+        #         prds = np.concatenate(prds, axis=0)
+        #     else:
+        #         prds = self.model.predict(
+        #             X_patches, verbose=1, batch_size=batch_size).squeeze()
+        #     out_shape = X.shape[:-1] if multichannel else X.shape
+        #     prds = merge_patches(prds, out_shape, self.patch_overlap)
+                
+        
         
 #%% Class(UNet) funtion(s) ----------------------------------------------------
 

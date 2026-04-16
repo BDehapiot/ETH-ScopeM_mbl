@@ -11,7 +11,6 @@ from bdtools.norm import norm_pct
 
 # skimage
 from skimage.segmentation import watershed
-from skimage.transform import downscale_local_mean
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
@@ -61,19 +60,6 @@ def norm_data(arr, its, channel_idx=None):
             arr[channel_idx] = norm_pct(arr[channel_idx])
     
     return arr
-
-#%% function(s) : binary masks ------------------------------------------------
-
-def save_bin_mask(arr, path):
-    arr_bin = np.packbits(arr > 0)        
-    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
-
-def load_bin_mask(path):
-    with np.load(path) as loader:
-        arr_bin = loader["data"]
-        shape = loader["org_shape"]
-        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
-        return unpacked.reshape(shape).astype(np.uint8) * 255
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -223,10 +209,9 @@ def get_intensities(pvw, msk):
     its["qtl"] = np.stack(qtl)
     return its
 
-#%% function(s) : dapi --------------------------------------------------------
+#%% function(s) : nuclei ------------------------------------------------------
     
-def get_dapi_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
-    # prd = downscale_local_mean(prd, 2 ** prc_level)
+def get_nuclei_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
     msk_0 = prd > thresh_0
     msk_1 = prd > thresh_1
     msk = watershed(-prd, label(msk_1), mask=msk_0)
@@ -235,11 +220,30 @@ def get_dapi_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
         msk, min_size=0.5 * (2 ** prc_level) ** 2)
     return msk > 0
 
-def get_dapi_centroids(msk, prc_level=1):
-    ctd = regionprops_table(label(msk), properties=("label", "centroid"))
-    ctd["y"] = ctd.pop("centroid-0").astype("int32")
-    ctd["x"] = ctd.pop("centroid-1").astype("int32") 
+def get_nuclei_centroids(msk, n_levels=5):
+
+    props = regionprops_table(label(msk), properties=("label", "centroid"))
+    y, x = props["centroid-0"], props["centroid-1"]
+    
+    ctd = {"y" : [], "x" : []}
+    for level in range(n_levels):
+        ctd["y"].append(y / 2 ** level) 
+        ctd["x"].append(x / 2 ** level) 
+                
     return ctd
+
+#%% function(s) : binary masks ------------------------------------------------
+
+def save_bin_mask(arr, path):
+    arr_bin = np.packbits(arr > 0)        
+    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
+
+def load_bin_mask(path):
+    with np.load(path) as loader:
+        arr_bin = loader["data"]
+        shape = loader["org_shape"]
+        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
+        return unpacked.reshape(shape).astype(np.uint8) * 255
 
 #%% Execute -------------------------------------------------------------------
 

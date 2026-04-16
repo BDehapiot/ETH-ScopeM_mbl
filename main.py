@@ -1,7 +1,6 @@
 #%% Imports -------------------------------------------------------------------
 
 import gc
-import time
 import pickle
 from skimage import io
 import tensorflow as tf
@@ -11,8 +10,8 @@ from pathlib import Path
 from functions import (
     prep_preview, norm_data,
     get_slide_metadata, load_view, get_intensities,
+    get_nuclei_mask, get_nuclei_centroids,
     save_bin_mask, load_bin_mask,
-    get_dapi_mask, get_dapi_centroids,
     )
 
 # bdtools
@@ -30,13 +29,12 @@ main_parameters = {
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
     "model_preview_name" : "model_256_binary_1024-56",
-    "model_dapi_name"    : "model_256_edt_1024-48",
+    "model_nuclei_name"  : "model_256_edt_1024-48",
     
     # extract()
     "pvw_level" : 4,
     
-    # process()
-    "prc_level" : 1,
+    # predict()
     "thresh_0"  : 0.25,
     "thresh_1"  : 0.50,
 
@@ -54,7 +52,7 @@ class Main:
         # Run
         self.initialize()
         self.extract()
-        self.process()
+        self.predict()
         
 #%% Class(Main) : initialize() ------------------------------------------------
 
@@ -135,9 +133,9 @@ class Main:
                     with open(its_path, "wb") as file:
                         pickle.dump(its, file)        
                         
-#%% Class(Main) : process() ---------------------------------------------------
+#%% Class(Main) : predict() ---------------------------------------------------
                    
-    def process(self):
+    def predict(self):
         
         for p, vws_path in enumerate(self.vws_paths):
 
@@ -146,53 +144,61 @@ class Main:
             mtd_path = self.data_path / (vws_path.stem[:-3] + "_metadata.pkl")
             its_path = vws_path / "intensities.pkl"
             view_idx = int(vws_path.stem[-2:])
-            dap_msk_path = vws_path / "dapi_mask.npz"
-            dap_ctd_path = vws_path / "centroids.pkl"
+            ncl_msk_path = vws_path / "nuclei_mask.npz"
+            ncl_ctd_path = vws_path / "centroids.pkl"
             
-            if not dap_msk_path.exists():
+            if not ncl_msk_path.exists():
                 
                 # Model
-                if "unet_dapi" not in locals():
-                    unet_dapi = UNet(
+                if "unet_nuclei" not in locals():
+                    unet_nuclei = UNet(
                         parameters=None, 
-                        model_path=Path.cwd() / self.model_dapi_name
+                        model_path=Path.cwd() / self.model_nuclei_name
                         )
                 
-                print(f"Main() : process() : {vws_path.name}")
+                print(f"Main() : predict() : {vws_path.name}")
                 
                 # Load
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
                 with open(its_path, "rb") as file:
                     its = pickle.load(file)
-                dap = load_view(
+                ncl = load_view(
                     qpt_path, metadata=mtd, channels="DAPI", 
                     level=0, view_idx=view_idx,
                     )
                                    
-                # Dapi prediction
-                dap_prd = unet_dapi.predict(
-                    norm_data(dap, its, channel_idx=0))
-
-                # Dapi mask
-                dap_msk = get_dapi_mask(
-                    dap_prd, 
-                    thresh_0=self.thresh_0,
-                    thresh_1=self.thresh_1,
-                    prc_level=self.prc_level,
+                # Nuclei prediction
+                ncl_prd = unet_nuclei.predict(
+                    norm_data(ncl, its, channel_idx=0), 
+                    batch_size=64, chunk_size=5000, patch_overlap=32,
                     )
 
-                # Dapi centroids                    
-                dap_ctd = get_dapi_centroids(dap_msk)
+                # Nuclei mask
+                ncl_msk = get_nuclei_mask(
+                    ncl_prd, thresh_0=self.thresh_0, thresh_1=self.thresh_1)
+
+                # Nuclei centroids                    
+                ncl_ctd = get_nuclei_centroids(
+                    ncl_msk, n_levels=len(mtd["level"]))
 
                 # Save
-                save_bin_mask(dap_msk, dap_msk_path)
-                with open(dap_ctd_path, "wb") as file:
-                    pickle.dump(dap_ctd, file)
+                save_bin_mask(ncl_msk, ncl_msk_path)
+                with open(ncl_ctd_path, "wb") as file:
+                    pickle.dump(ncl_ctd, file)
                                     
                 # Clear
+                del ncl, ncl_prd, ncl_msk
                 tf.keras.backend.clear_session()
                 gc.collect()
+                
+#%% Class(Main) : process() ---------------------------------------------------
+
+    def process(self):
+        
+        
+        
+        pass
 
 #%% Execute -------------------------------------------------------------------
 
