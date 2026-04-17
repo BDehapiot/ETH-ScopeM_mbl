@@ -26,7 +26,7 @@ unet_parameters = {
     "run_train"     : 0,
     
     # Paths
-    "train_path" : Path.cwd() / "data" / "train_dapi", 
+    "train_path" : Path.cwd() / "data" / "train_nuclei", 
     
     # extract_patches()
     "n_patches"             : 10, # save n_patches per preview image
@@ -68,9 +68,9 @@ unet_parameters = {
     
     }
 
-#%% Class(TrainDapi) ----------------------------------------------------------
+#%% Class(TrainNuclei) --------------------------------------------------------
 
-class TrainDapi:
+class TrainNuclei:
     def __init__(self, main, parameters=None):
         self.main = main
         self.parameters = parameters | main.parameters
@@ -88,56 +88,55 @@ class TrainDapi:
         if self.run_train:
             self.train()
 
-#%% Class(Train) extract_patches() --------------------------------------------
+#%% Class(TrainNuclei) extract_patches() --------------------------------------
 
     def extract_patches_0(self):
-        """
-        to be implemented
-        """
+        """ to be implemented """
         pass
                 
     def extract_patches_1(self):
         
         msk_paths = list(self.train_path.glob("*_mask.tif"))
         
-        for path in msk_paths:
+        for p, msk_path in enumerate(msk_paths):
             
             # Parse paths
-            qpt_path  = self.data_path / (path.stem[:26] + ".qptiff")
-            mtd_path  = self.data_path / (path.stem[:26] + "_metadata.pkl")
-            its_path  = self.data_path / path.stem[:29] / "intensities.pkl"
-            view_idx  = int(path.stem[27:29])
-            patch_idx = int(path.stem.split("_")[-2])
+            qpt_path = self.main.qpt_paths[p]
+            mtd_path = self.main.mtd_paths[p]
+            vws_path = self.main.vws_paths[p]
+            pvw_its_path = vws_path / "preview_intensities.pkl"
+            view_idx  = int(msk_path.stem.split("_")[-5])
+            patch_idx = int(msk_path.stem.split("_")[-2])
                         
             # Load
             with open(mtd_path, "rb") as file:
                 mtd = pickle.load(file)
-            with open(its_path, "rb") as file:
-                its = pickle.load(file)
-            dap = load_view(
+            with open(pvw_its_path, "rb") as file:
+                pvw_its = pickle.load(file)
+            ncl = load_view(
                 qpt_path, metadata=mtd, channels="DAPI", 
                 level=0, view_idx=view_idx,
                 )
-            dap = norm_data(dap, its, channel_idx=0)
+            ncl = norm_data(ncl, pvw_its, channel_idx=0)
             
             # Extract patch
             patch = extract_patches(
-                dap, self.extract_patch_size, self.extract_patch_overlap)[patch_idx]
+                ncl, self.extract_patch_size, self.extract_patch_overlap)[patch_idx]
             
             # Save
-            patch_name = str(path).replace("_mask", "")
+            patch_name = str(msk_path).replace("_mask", "")
             io.imsave(
                 self.train_path / patch_name,
                 patch, check_contrast=False,
                 )
                             
-#%% Class(Train) annotate() ---------------------------------------------------
+#%% Class(TrainNuclei) annotate() ---------------------------------------------
 
     def annotate(self):
         Annotate(self.train_path)  
         
-#%% Class(Train) train() ------------------------------------------------------
-
+#%% Class(TrainNuclei) train() ------------------------------------------------
+    
     def train(self):
         
         # Load data
@@ -168,6 +167,4 @@ class TrainDapi:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    train = TrainDapi(main, parameters=unet_parameters)
-    
-    
+    train = TrainNuclei(main, parameters=unet_parameters)

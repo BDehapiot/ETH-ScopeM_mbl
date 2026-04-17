@@ -22,8 +22,8 @@ def norm_12_to_8bits(arr):
         return ((arr + 8) / 16).astype("uint8")
     elif arr.ndim == 3:
         for i, img in enumerate(arr):
-            arr[i] = ((img + 8) / 16).astype("uint8")
-        return arr  
+            arr[i] = ((img + 8) / 16)
+        return arr.astype("uint8")
             
 def norm_pct_8bits(arr):
     if arr.ndim == 2:
@@ -60,6 +60,26 @@ def norm_data(arr, its, channel_idx=None):
             arr[channel_idx] = norm_pct(arr[channel_idx])
     
     return arr
+
+#%% function(s) : save compressed ---------------------------------------------
+
+def save_compressed_mask(arr, path):
+    arr_bin = np.packbits(arr > 0)        
+    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
+
+def load_compressed_mask(path):
+    with np.load(path) as loader:
+        arr_bin = loader["data"]
+        shape = loader["org_shape"]
+        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
+        return unpacked.reshape(shape).astype(np.uint8) * 255
+    
+def save_compressed_stack(arr, path):
+    np.savez_compressed(path, data=arr)
+
+def load_compressed_stack(path):
+    with np.load(path) as loader:
+        return loader["data"]
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -142,22 +162,22 @@ def get_slide_metadata(path):
 
 #%% function(s) : load_view() -------------------------------------------------
 
-def load_view(path, metadata=None, channels="all", level=4, view_idx=None):
+def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
     
     # Nested function(s) ------------------------------------------------------
     
     def get_position():
         roi = metadata["roi"]
         return (
-            roi[view_idx][level][2], 
-            roi[view_idx][level][0],
+            roi[roi_idx][level][2], 
+            roi[roi_idx][level][0],
             )  
     
     def get_shape():
         roi = metadata["roi"]
         return (
-            roi[view_idx][level][3] - roi[view_idx][level][2],
-            roi[view_idx][level][1] - roi[view_idx][level][0],
+            roi[roi_idx][level][3] - roi[roi_idx][level][2],
+            roi[roi_idx][level][1] - roi[roi_idx][level][0],
             )
 
     # Execute -----------------------------------------------------------------
@@ -176,7 +196,7 @@ def load_view(path, metadata=None, channels="all", level=4, view_idx=None):
     arr = []
     with QPTiffFile(path) as qptiff:
         for channel in channels:
-            if view_idx is not None:
+            if roi_idx is not None:
                 arr.append(qptiff.read_region(
                     channel, level=level,
                     pos=get_position(),
@@ -231,19 +251,6 @@ def get_nuclei_centroids(msk, n_levels=5):
         ctd["x"].append(x / 2 ** level) 
                 
     return ctd
-
-#%% function(s) : binary masks ------------------------------------------------
-
-def save_bin_mask(arr, path):
-    arr_bin = np.packbits(arr > 0)        
-    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
-
-def load_bin_mask(path):
-    with np.load(path) as loader:
-        arr_bin = loader["data"]
-        shape = loader["org_shape"]
-        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
-        return unpacked.reshape(shape).astype(np.uint8) * 255
 
 #%% Execute -------------------------------------------------------------------
 

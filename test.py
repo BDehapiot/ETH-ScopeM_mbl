@@ -1,5 +1,6 @@
 #%% Imports -------------------------------------------------------------------
 
+import time
 import pickle
 import napari
 import numpy as np
@@ -8,7 +9,10 @@ from pathlib import Path
 import matplotlib.pyplot as plt
 
 # function(s)
-from functions import get_intensities
+from functions import (
+    load_view, norm_12_to_8bits,
+    save_compressed_stack, load_compressed_stack,
+    )
 
 #%% Function(s) ---------------------------------------------------------------
 
@@ -30,25 +34,25 @@ def pad_images(imgs):
 
 if __name__ == "__main__":
 
-    # Paths
-    data_path = Path("D:\local_mbl\data")
-    pvw_raw_paths = list(data_path.rglob("preview_raw.tif"))
-    pvw_msk_paths = list(data_path.rglob("preview_mask.tif"))
+    # # Paths
+    # data_path = Path("D:\local_mbl\data")
+    # pvw_raw_paths = list(data_path.rglob("preview_raw.tif"))
+    # pvw_msk_paths = list(data_path.rglob("preview_mask.tif"))
     
-    # Parameters
-    channel = 5
+    # # Parameters
+    # channel = 5
     
-    # Load data
-    pvws, msks = [], []
-    for pvw_path, msk_path in zip(pvw_raw_paths, pvw_msk_paths):
-        pvw = io.imread(pvw_path)[channel]
-        msk = io.imread(msk_path)
-        pvws.append(pvw)
-        msks.append(msk)
+    # # Load
+    # pvws, msks = [], []
+    # for pvw_path, msk_path in zip(pvw_raw_paths, pvw_msk_paths):
+    #     pvw = io.imread(pvw_path)[channel]
+    #     msk = io.imread(msk_path)
+    #     pvws.append(pvw)
+    #     msks.append(msk)
         
-    # Pad
-    pvws = pad_images(pvws)
-    msks = pad_images(msks)
+    # # Pad
+    # pvws = pad_images(pvws)
+    # msks = pad_images(msks)
         
     # # Display
     # vwr = napari.Viewer()
@@ -63,11 +67,90 @@ if __name__ == "__main__":
     #     opacity=0.25,
     #     )    
     
-#%% Centroids -----------------------------------------------------------------
+#%% Compressed stack ----------------------------------------------------------
 
+    # # Paths
+    # data_path = Path("D:\local_mbl\data")    
+    # vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
+    # qpt_path = data_path / (vws_path.name[:-3] + ".qptiff")
+    # mtd_path = data_path / (vws_path.name[:-3] + "_metadata.pkl")
+    # roi_idx  = int(vws_path.name.split("_")[-1])
+    # stk_raw_path = vws_path / "stack_raw.npz"
+    
+    # # Parameters
+    # prc_level = 1
+    
+    # # Load #1
+    # with open(mtd_path, "rb") as file:
+    #     mtd = pickle.load(file)
+    # stk_raw = load_view(
+    #     qpt_path, metadata=mtd, channels="all", 
+    #     level=prc_level, roi_idx=roi_idx
+    #     )
+    # stk_raw = norm_12_to_8bits(stk_raw)
+    
+    # # Save
+    # t0 = time.time()
+    # print("save_compressed_stack() : ", end="", flush=True)
+    # save_compressed_stack(stk_raw, stk_raw_path)
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
+    
+    # # Load #2
+    # t0 = time.time()
+    # print("load_compressed_stack() : ", end="", flush=True)
+    # stk_raw_loaded = load_compressed_stack(stk_raw_path)
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
+    
+    # # Display
+    # vwr = napari.Viewer()
+    # vwr.add_image(
+    #     stk_raw_loaded, name="stk_raw", visible=1,
+    #     blending="additive",
+    #     )
+    
+#%% Zarr stack ----------------------------------------------------------------
+
+    import zarr
+
+    # Paths
+    data_path = Path("D:\local_mbl\data")    
     vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
-    ctd_path = vws_path / "centroids.pkl"
-    with open(ctd_path, "rb") as file:
-        ctd = pickle.load(file)
+    qpt_path = data_path / (vws_path.name[:-3] + ".qptiff")
+    mtd_path = data_path / (vws_path.name[:-3] + "_metadata.pkl")
+    roi_idx  = int(vws_path.name.split("_")[-1])
+    stk_raw_path = vws_path / "stack_raw.zarr"
     
+    # Parameters
+    prc_level = 1
     
+    # Load #1
+    with open(mtd_path, "rb") as file:
+        mtd = pickle.load(file)
+    stk_raw = load_view(
+        qpt_path, metadata=mtd, channels="all", 
+        level=prc_level, roi_idx=roi_idx
+        )
+    stk_raw = norm_12_to_8bits(stk_raw)
+    
+    # Save
+    t0 = time.time()
+    print("save zarr : ", end="", flush=True)
+    zarr.save(str(stk_raw_path), stk_raw, chunks=True)
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+    
+    # Load
+    t0 = time.time()
+    print("load zarr : ", end="", flush=True)
+    stk_raw_loaded = zarr.load(str(stk_raw_path))
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+        
+    # Display
+    vwr = napari.Viewer()
+    vwr.add_image(
+        stk_raw_loaded, name="stk_raw", visible=1,
+        blending="additive",
+        )

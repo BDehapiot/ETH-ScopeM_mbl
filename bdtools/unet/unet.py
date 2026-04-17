@@ -151,11 +151,13 @@ class UNet:
                     prd.append(
                         self.model.predict(chunk, batch_size=batch_size))
                 prd = np.concatenate(prd, axis=0)
+                
                 del chunk
             
             else:
                 
                 prd = self.model.predict(patches, batch_size=batch_size)
+                
                 del patches
                 
             # Merge patches
@@ -164,44 +166,6 @@ class UNet:
             prds.append(prd)
     
         return prds if islist else prds[0]
-        
-        # if isinstance(X, list): 
-            
-        #     prds = []
-        #     for arr_X in X:    
-        #         X_patches = np.stack(extract_patches(
-        #             arr_X, self.patch_size, self.patch_overlap, 
-        #             multichannel=multichannel
-        #             ))
-                
-        #         prd = self.model.predict(
-        #             X_patches, verbose=1, batch_size=batch_size).squeeze()
-        #         out_shape = arr_X.shape[:-1] if multichannel else arr_X.shape
-        #         prd = merge_patches(prd, out_shape, self.patch_overlap)
-        #         prds.append(prd)
-                
-        # if isinstance(X, np.ndarray):
-            
-        #     X_patches = np.stack(extract_patches(
-        #         X, self.patch_size, self.patch_overlap, 
-        #         multichannel=multichannel
-        #         ))
-            
-        #     prds = []
-        #     if chunk_size is not None:
-        #         for i in range(0, len(X_patches), chunk_size):
-        #             chunk = X_patches[i : i + chunk_size]
-        #             prd = self.model.predict(
-        #                 chunk, verbose=1, batch_size=batch_size).squeeze()
-        #             prds.append(prd)
-        #         prds = np.concatenate(prds, axis=0)
-        #     else:
-        #         prds = self.model.predict(
-        #             X_patches, verbose=1, batch_size=batch_size).squeeze()
-        #     out_shape = X.shape[:-1] if multichannel else X.shape
-        #     prds = merge_patches(prds, out_shape, self.patch_overlap)
-                
-        
         
 #%% Class(UNet) funtion(s) ----------------------------------------------------
 
