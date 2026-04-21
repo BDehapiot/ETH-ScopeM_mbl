@@ -241,16 +241,46 @@ def get_nuclei_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
     return msk > 0
 
 def get_nuclei_centroids(msk, n_levels=5):
-
     props = regionprops_table(label(msk), properties=("label", "centroid"))
     y, x = props["centroid-0"], props["centroid-1"]
-    
     ctd = {"y" : [], "x" : []}
     for level in range(n_levels):
         ctd["y"].append(y / 2 ** level) 
         ctd["x"].append(x / 2 ** level) 
-                
     return ctd
+
+#%% function(s) : crops -------------------------------------------------------
+
+def get_crops(stk, ctd, crop_size=32, crop_fraction=0.1, stk_level=1):
+    
+    # Pad (acc. to crop half size)
+    chs = crop_size // 2 # crop half size
+    pad_width = ((0, 0), (chs, chs), (chs, chs))
+    stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+
+    # Extract coordinates
+    ys = ctd["y"][stk_level]
+    xs = ctd["x"][stk_level]
+    
+    # Select random coordinates
+    crop_idx = np.random.choice(
+        np.arange(0, len(ys)), 
+        size=int(len(ys) * crop_fraction), 
+        replace=False,
+        )
+    ys = ys[crop_idx].astype(int)
+    xs = xs[crop_idx].astype(int)
+    
+    # Extract crops
+    crops = []
+    for (y, x) in zip(ys, xs):
+        y0 = y; y1 = y + crop_size
+        x0 = x; x1 = x + crop_size
+        if y1 - y0 != crop_size: print(y0, y1)
+        if x1 - x0 != crop_size: print(x0, x1)
+        crops.append(stk[..., y0:y1, x0:x1])
+        
+    return np.stack(crops)
 
 #%% Execute -------------------------------------------------------------------
 

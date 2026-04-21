@@ -12,6 +12,7 @@ import matplotlib.pyplot as plt
 from functions import (
     load_view, norm_12_to_8bits,
     save_compressed_stack, load_compressed_stack,
+    get_crops,
     )
 
 #%% Function(s) ---------------------------------------------------------------
@@ -110,47 +111,83 @@ if __name__ == "__main__":
     #     blending="additive",
     #     )
     
-#%% Zarr stack ----------------------------------------------------------------
-
-    import zarr
+#%% get crops -----------------------------------------------------------------
 
     # Paths
     data_path = Path("D:\local_mbl\data")    
     vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
-    qpt_path = data_path / (vws_path.name[:-3] + ".qptiff")
-    mtd_path = data_path / (vws_path.name[:-3] + "_metadata.pkl")
-    roi_idx  = int(vws_path.name.split("_")[-1])
-    stk_raw_path = vws_path / "stack_raw.zarr"
+    ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+    stk_raw_path = vws_path / "stack_raw.npz"
     
     # Parameters
-    prc_level = 1
+    crop_size = 32
+    crop_fraction = 0.1
+    stk_level = 1
     
-    # Load #1
-    with open(mtd_path, "rb") as file:
-        mtd = pickle.load(file)
-    stk_raw = load_view(
-        qpt_path, metadata=mtd, channels="all", 
-        level=prc_level, roi_idx=roi_idx
+    # Load ncl_ctd
+    with open(ncl_ctd_path, "rb") as file:
+        ncl_ctd = pickle.load(file)
+    
+    # Load stk_raw
+    t0 = time.time()
+    print("load_compressed_stack() : ", end="", flush=True)
+    stk_raw = load_compressed_stack(stk_raw_path)
+    t1 = time.time()
+    print(f"{t1 - t0:.3f}s")
+    
+    # get_crops()
+    t0 = time.time()
+    print("get_crops() : ", end="", flush=True)
+    crops = get_crops(
+        stk_raw, ncl_ctd, 
+        crop_size=crop_size, 
+        crop_fraction=crop_fraction, 
+        stk_level=stk_level,
         )
-    stk_raw = norm_12_to_8bits(stk_raw)
-    
-    # Save
-    t0 = time.time()
-    print("save zarr : ", end="", flush=True)
-    zarr.save(str(stk_raw_path), stk_raw, chunks=True)
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")
     
-    # Load
-    t0 = time.time()
-    print("load zarr : ", end="", flush=True)
-    stk_raw_loaded = zarr.load(str(stk_raw_path))
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
+#%% Zarr stack ----------------------------------------------------------------
+
+    # import zarr
+
+    # # Paths
+    # data_path = Path("D:\local_mbl\data")    
+    # vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
+    # qpt_path = data_path / (vws_path.name[:-3] + ".qptiff")
+    # mtd_path = data_path / (vws_path.name[:-3] + "_metadata.pkl")
+    # roi_idx  = int(vws_path.name.split("_")[-1])
+    # stk_raw_path = vws_path / "stack_raw.zarr"
+    
+    # # Parameters
+    # prc_level = 1
+    
+    # # Load #1
+    # with open(mtd_path, "rb") as file:
+    #     mtd = pickle.load(file)
+    # stk_raw = load_view(
+    #     qpt_path, metadata=mtd, channels="all", 
+    #     level=prc_level, roi_idx=roi_idx
+    #     )
+    # stk_raw = norm_12_to_8bits(stk_raw)
+    
+    # # Save
+    # t0 = time.time()
+    # print("save zarr : ", end="", flush=True)
+    # zarr.save(str(stk_raw_path), stk_raw, chunks=True)
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
+    
+    # # Load
+    # t0 = time.time()
+    # print("load zarr : ", end="", flush=True)
+    # stk_raw_loaded = zarr.load(str(stk_raw_path))
+    # t1 = time.time()
+    # print(f"{t1 - t0:.3f}s")
         
-    # Display
-    vwr = napari.Viewer()
-    vwr.add_image(
-        stk_raw_loaded, name="stk_raw", visible=1,
-        blending="additive",
-        )
+    # # Display
+    # vwr = napari.Viewer()
+    # vwr.add_image(
+    #     stk_raw_loaded, name="stk_raw", visible=1,
+    #     blending="additive",
+    #     )
