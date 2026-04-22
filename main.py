@@ -53,7 +53,7 @@ class Main:
         
         # Run
         self.extract()
-        self.predict()
+        # self.predict()
         
 #%% Class(Main) : extract() ---------------------------------------------------
 
@@ -96,6 +96,7 @@ class Main:
                 pvw_nrm_path = vws_path / "preview_norm.tif"
                 pvw_its_path = vws_path / "preview_intensities.pkl"
                 stk_raw_path = vws_path / "stack_raw.npz"
+                stk_nrm_path = vws_path / "stack_norm.npz"
 
                 if not vws_path.exists():
                     
@@ -109,7 +110,7 @@ class Main:
                     print(f"Main() : extract() : {vws_path.name}")
                     
                     vws_path.mkdir(parents=True, exist_ok=True) 
-
+    
                     # Preview raw
                     pvw_raw = load_view(
                         qpt_path, metadata=mtd, channels="all", 
@@ -134,11 +135,15 @@ class Main:
                         )
                     stk_raw = norm_12_to_8bits(stk_raw)
                     
+                    # Stack norm
+                    stk_nrm = (norm_data(stk_raw, pvw_its) * 255).astype("uint8")
+                    
                     # Save
                     io.imsave(pvw_raw_path, pvw_raw, check_contrast=False)
                     io.imsave(pvw_msk_path, pvw_msk, check_contrast=False)
                     io.imsave(pvw_nrm_path, pvw_nrm, check_contrast=False)
                     save_compressed_stack(stk_raw, stk_raw_path)
+                    save_compressed_stack(stk_nrm, stk_nrm_path)
                     with open(pvw_its_path, "wb") as file:
                         pickle.dump(pvw_its, file)        
                             
