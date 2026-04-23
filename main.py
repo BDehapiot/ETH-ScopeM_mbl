@@ -29,8 +29,8 @@ main_parameters = {
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
-    "model_preview_name" : "model_256_binary_1024-56",
-    "model_nuclei_name"  : "model_256_edt_1024-48",
+    "model_preview_name" : "model-preview_256_binary_1024-56",
+    "model_nuclei_name"  : "model-nuclei_256_edt_1024-48",
     
     # extract()
     "pvw_level" : 4,
@@ -52,7 +52,7 @@ class Main:
                 setattr(self, key, val)
         
         # Run
-        self.extract()
+        # self.extract()
         # self.predict()
         
 #%% Class(Main) : extract() ---------------------------------------------------

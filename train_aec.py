@@ -2,41 +2,46 @@
 
 import pickle
 import numpy as np
-from skimage import io
 from main import Main, main_parameters
 
 # functions
 from functions import (
-    norm_data, get_crops, 
-    save_compressed_stack, load_compressed_stack
-    )
+    get_crops, save_compressed_stack, load_compressed_stack)
+
+# bdtools
+from bdtools.unet import metrics
 
 # tensorflow
 import tensorflow as tf
 from tensorflow.keras import layers, Model
-from tensorflow.keras.callbacks import (
-    ModelCheckpoint, EarlyStopping, ReduceLROnPlateau)
+from tensorflow.keras.optimizers import Adam
+from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping
 
 #%% Inputs --------------------------------------------------------------------
 
 aec_parameters = {
     
     # Procedure
-    "run_crops"     : 0,
-    "run_train"     : 1,
+    "run_crops"        : 0,
+    "run_train"        : 0,
     
     # get_crops() 
-    "crop_size"     : 32,
-    "crop_fraction" : 0.01,
-    "stk_level"     : 1,
+    "crop_size"        : 32,
+    "crop_fraction"    : 0.01,
+    "stk_level"        : 1,
     
     # build()
-    "n_channels"    : 8,
-    "latent_size"   : 64,
+    "n_channels"       : 8,
+    "latent_size"      : 512,
     
-    # # train()
-    # "batch_size"    : 256,
-    
+    # train()
+    "epochs"           : 256,
+    "batch_size"       : 256,
+    "validation_split" : 0.2,
+    "metric"           : "soft_dice_coef",
+    "learning_rate"    : 0.001,
+    "patience"         : 64,
+        
     }
 
 #%% Class(TrainAEC) -----------------------------------------------------------
@@ -90,16 +95,34 @@ class TrainAEC:
 #%% Class(TrainAEC) : build() -------------------------------------------------
     
     def build(self):
-            
+        
+        # def combined_loss(y_true, y_pred):
+        #     return (
+        #         tf.keras.losses.binary_crossentropy(y_true, y_pred) + 
+        #         (1 - metrics.soft_dice_coef(y_true, y_pred))
+        #         )
+        
+        def combined_loss(y_true, y_pred):
+            bce = tf.keras.losses.binary_crossentropy(y_true, y_pred)
+            dice_loss = 1 - metrics.soft_dice_coef(y_true, y_pred)
+            return bce + (5.0 * dice_loss)
+        
         # Encoder -------------------------------------------------------------
         
         encoder_inputs = layers.Input(
             shape=(self.crop_size, self.crop_size, self.n_channels))
         
-        x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(encoder_inputs)
-        x = layers.MaxPooling2D((2, 2), padding="same")(x)
-        x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
-        x = layers.MaxPooling2D((2, 2), padding="same")(x)
+        x = layers.Conv2D(32, (3, 3), padding="same")(encoder_inputs)
+        x = layers.BatchNormalization()(x)
+        # x = layers.Activation("relu")(x)
+        x = layers.LeakyReLU(alpha=0.1)(x)
+        x = layers.MaxPooling2D((2, 2))(x)
+        
+        x = layers.Conv2D(64, (3, 3), padding="same")(x)
+        x = layers.BatchNormalization()(x)
+        # x = layers.Activation("relu")(x)
+        x = layers.LeakyReLU(alpha=0.1)(x)
+        x = layers.MaxPooling2D((2, 2))(x)
         
         x = layers.Flatten()(x)
         latent_space = layers.Dense(
@@ -115,11 +138,13 @@ class TrainAEC:
         
         x = layers.Dense(spatial_dim * spatial_dim * 64, activation="relu")(decoder_inputs)
         x = layers.Reshape((spatial_dim, spatial_dim, 64))(x)
-        x = layers.Conv2DTranspose(64, (3, 3), activation="relu", padding="same")(x)
-        x = layers.UpSampling2D((2, 2))(x)
-        x = layers.Conv2DTranspose(32, (3, 3), activation="relu", padding="same")(x)
-        x = layers.UpSampling2D((2, 2))(x)
         
+        x = layers.UpSampling2D((2, 2))(x)
+        x = layers.Conv2D(64, (3, 3), activation="relu", padding="same")(x)
+        
+        x = layers.UpSampling2D((2, 2))(x)
+        x = layers.Conv2D(32, (3, 3), activation="relu", padding="same")(x)
+                
         decoder_outputs = layers.Conv2D(
             self.n_channels, (3, 3), activation="sigmoid", padding="same")(x)
         
@@ -134,7 +159,14 @@ class TrainAEC:
         
         self.autoencoder = Model(
             autoencoder_inputs, reconstructed_img, name="autoencoder")
-        self.autoencoder.compile(optimizer="adam", loss="mse")
+        
+        # Compile        
+        self.autoencoder.compile(
+            optimizer=Adam(learning_rate=self.learning_rate),
+            # loss="binary_crossentropy", # Parameter
+            loss=combined_loss,
+            metrics=[getattr(metrics, self.metric)],
+            )
     
 #%% Class(TrainAEC) : train() -------------------------------------------------
 
@@ -148,58 +180,100 @@ class TrainAEC:
         self.crp_nrm = self.crp_nrm.astype("float32") / 255
         
         # Split data
+        crp_num = self.crp_nrm.shape[0]
+        trn_num = int(crp_num * (1 - self.validation_split))
+        idxs = np.random.choice(
+            np.arange(0, crp_num), size=crp_num, replace=False)
+        idx_trn = idxs[0:trn_num]
+        idx_val = idxs[trn_num:]
+        X_trn = self.crp_nrm[idx_trn]
+        X_val = self.crp_nrm[idx_val]
         
+        # Transpose
+        X_trn = np.transpose(X_trn, (0, 2, 3, 1))
+        X_val = np.transpose(X_val, (0, 2, 3, 1))
+
+        # Callbacks
+        callbacks = [
+            EarlyStopping(
+                monitor="val_loss", 
+                patience=self.patience, 
+                restore_best_weights=True
+                ),
+            ModelCheckpoint(
+                filepath=str(self.main.data_path / "aec_best.keras"), 
+                save_best_only=True, 
+                monitor="val_loss"
+                ),
+            ]
         
-        # crop_idx = np.random.choice(
-        #     np.arange(0, len(ys)), 
-        #     size=int(len(ys) * crop_fraction), 
-        #     replace=False,
-        #     )
+        # Train
+        bs = self.batch_size
+        trn_dataset = tf.data.Dataset.from_tensor_slices((X_trn, X_trn))
+        trn_dataset = trn_dataset.batch(bs).prefetch(tf.data.AUTOTUNE)
+        val_dataset = tf.data.Dataset.from_tensor_slices((X_val, X_val))
+        val_dataset = val_dataset.batch(bs).prefetch(tf.data.AUTOTUNE)
+
+        # Train    
+        self.history = self.autoencoder.fit(
+            x=trn_dataset,
+            validation_data=val_dataset,
+            batch_size=self.batch_size,
+            epochs=self.epochs,
+            callbacks=callbacks,
+            )
         
+#%% Class(TrainAEC) : predict() -------------------------------------------------
+
+    def predict(self, data, batch_size=None):
             
-        # # 2. SHUFFLE AND SPLIT DATA (80% Train, 20% Validation)
-        # dataset_size = len(self.crops)
-        # val_size = int(0.2 * dataset_size)
-        # train_size = dataset_size - val_size
+        # Paths
+        weights_path = self.main.data_path / "aec_best.keras"
+               
+        # Build
+        self.build()
+        self.autoencoder.load_weights(str(weights_path))
         
-        # dataset = tf.data.Dataset.from_tensor_slices((self.crops, self.crops))
-        # dataset = dataset.shuffle(buffer_size=1024) # Shuffle before splitting
+        # Format data
+        X = data.astype("float32") / 255.0
+        X = np.transpose(X, (0, 2, 3, 1))
         
-        # train_dataset = dataset.take(train_size).batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
-        # val_dataset = dataset.skip(train_size).batch(self.batch_size).prefetch(tf.data.AUTOTUNE)
-        
-        # # 3. CONFIGURE CALLBACKS
-        # callbacks = [
-        #     # Stop training if validation loss doesn't improve for 5 epochs
-        #     EarlyStopping(monitor='val_loss', patience=5, restore_best_weights=True),
-        #     # Reduce learning rate if training plateaus
-        #     ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=2, min_lr=1e-6),
-        #     # Save the best overall autoencoder model automatically
-        #     ModelCheckpoint(
-        #         filepath=str(self.main.data_path / "autoencoder_best.keras"), 
-        #         save_best_only=True, 
-        #         monitor='val_loss'
-        #     )
-        # ]
-        
-        # # 4. TRAIN THE MODEL
-        # # We can safely increase epochs now because EarlyStopping will halt it if needed
-        # self.history = self.autoencoder.fit(
-        #     train_dataset, 
-        #     validation_data=val_dataset,
-        #     epochs=50, 
-        #     callbacks=callbacks
-        # )
-        
-        # # 5. SAVE THE ENCODER (Usually the most useful part for future predictions)
-        # # We save it in the newer .keras format (recommended over .h5)
-        # self.encoder.save(self.main.data_path / "encoder.keras")
-        # print("Training complete. Models saved!")
-    
+        # Predict
+        if batch_size is None:
+            batch_size = self.batch_size
+        predictions = self.autoencoder.predict(X, batch_size=batch_size)
+        predictions = np.transpose(predictions, (0, 3, 1, 2))
+
+        return predictions
     
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     train = TrainAEC(main, parameters=aec_parameters)
-    crp_nrm = train.crp_nrm
+    
+#%% Predict
+    
+    # Parameters
+    subset = 0.01
+
+    # Paths
+    crp_nrm_path = main.data_path / "crops_raw.npz"
+    
+    # Load
+    crp_nrm = load_compressed_stack(crp_nrm_path)
+    crp_num = crp_nrm.shape[0]
+    
+    # Select data
+    idxs = np.random.choice(
+        np.arange(0, crp_num), size=int(crp_num * subset), replace=False)
+    X = crp_nrm[idxs]
+    
+    # Predict
+    prd = train.predict(X)
+    
+    # Display
+    import napari
+    vwr = napari.Viewer()
+    vwr.add_image(X)
+    vwr.add_image(prd)

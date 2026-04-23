@@ -40,7 +40,7 @@ class CallBacks(Callback):
         
         # Checkpoint
         self.checkpoint = ModelCheckpoint(
-            filepath=self.weights_path,
+            filepath=self.unet.model_path / "weights.h5",
             save_weights_only=True,
             save_best_only=True,
             monitor="val_loss", 
@@ -177,7 +177,7 @@ class CallBacks(Callback):
         
         # Save    
         plt.tight_layout()
-        plt.savefig(self.model_path / "train_plot.png", format="png")
+        plt.savefig(self.unet.model_path / "train_plot.png", format="png")
         plt.show()
         
 #%% Class(CallBacks) : predict_examples() ------------------------------------- 
@@ -217,6 +217,6 @@ class CallBacks(Callback):
         
         # Save
         io.imsave(
-            self.model_path / "predict_examples.tif",
+            self.unet.model_path / "predict_examples.tif",
             predict_examples, check_contrast=False
             )

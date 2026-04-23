@@ -35,7 +35,7 @@ unet_parameters = {
     
     # Paths
     "root_path"          : None,
-    "model_name"         : "model_256_binary_1024-56",
+    "model_name"         : None,
 
     # Build
     "input_shape"        : (None, None, 1),

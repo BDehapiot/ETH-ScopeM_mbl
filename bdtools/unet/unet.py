@@ -40,15 +40,45 @@ class UNet:
                 "User must either provide 'parameters' or 'model_path', but not both"
                 )
                     
-        # Parameters
+        # Load parameters
         if self.parameters is None:
-            self.params_path = self.model_path / "parameters.pkl"
-            with open(self.params_path, "rb") as file:
+            
+            with open(self.model_path / "parameters.pkl", "rb") as file:
                 self.parameters = pickle.load(file)
                 print(f"({self.model_path.name}) : load parameters ")
+        
+        # Parameters as attributes
         for key, val in self.parameters.items():
             if not isinstance(val, dict):
                 setattr(self, key, val)
+
+    def initialize_train(self):
+        
+        # Create model name (if not provided)
+        if self.model_name is None:
+            if isinstance(self.X, list):
+                n = len(self.X)
+            elif isinstance(self.X, np.ndarray):
+                n = self.X.shape[0]
+            n_trn = int(n - (n * self.validation_split))
+            self.model_name = (
+                "model_"
+                f"{self.patch_size}_"
+                f"{self.mask_method}_"
+                f"{self.augment_iterations}"
+                f"-{n_trn}"
+                )
+            
+        # Create model path and directory
+        if self.root_path is None:
+            self.root_path = Path.cwd()
+        self.model_path = self.root_path / self.model_name
+        if not self.model_path.exists():
+            self.model_path.mkdir(exist_ok=True)
+        
+        # Save parameters
+        with open(self.model_path / "parameters.pkl", "wb") as file:
+            pickle.dump(self.parameters, file)
         
 #%% Class(UNet) build() -------------------------------------------------------
 
@@ -86,7 +116,7 @@ class UNet:
             ctype=(np.ndarray, list), dtype=float,
             vrange=(0, 1),
             )
-        self.get_parameters()
+        self.initialize_train()
         Prepare(self)
         
         self.callbacks = [CallBacks(self)]
@@ -166,47 +196,7 @@ class UNet:
             prds.append(prd)
     
         return prds if islist else prds[0]
-        
-#%% Class(UNet) funtion(s) ----------------------------------------------------
-
-    def get_parameters(self):
-        
-        # Model name 
-        if self.model_name is None:
-            if isinstance(self.X, list):
-                n = len(self.X)
-            elif isinstance(self.X, np.ndarray):
-                n = self.X.shape[0]
-            n_trn = int(n - (n * self.validation_split))
-            self.model_name = (
-                "model_"
-                f"{self.patch_size}_"
-                f"{self.mask_method}_"
-                f"{self.augment_iterations}"
-                f"-{n_trn}"
-                )
-            
-        # Paths
-        if self.root_path is None:
-            self.root_path = Path.cwd()
-        self.model_path = self.root_path / self.model_name
-        self.params_path = self.model_path / "parameters.pkl"
-        self.weights_path = self.model_path / "weights.h5"
-        if not self.model_path.exists():
-            self.model_path.mkdir(exist_ok=True)
-            
-        # Append parameters
-        self.parameters["model_name"  ] = self.model_name
-        self.parameters["root_path"   ] = self.root_path
-        self.parameters["model_path"  ] = self.model_path
-        self.parameters["params_path" ] = self.params_path
-        self.parameters["weights_path"] = self.weights_path
-        self.parameters["input_shape" ] = self.input_shape
-        
-        # Save parameters
-        with open(self.params_path, "wb") as file:
-            pickle.dump(self.parameters, file)
-            
+                    
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
