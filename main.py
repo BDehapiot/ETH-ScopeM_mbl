@@ -52,8 +52,8 @@ class Main:
                 setattr(self, key, val)
         
         # Run
-        # self.extract()
-        # self.predict()
+        self.extract()
+        self.predict()
         
 #%% Class(Main) : extract() ---------------------------------------------------
 
@@ -205,12 +205,6 @@ class Main:
                 del ncl, ncl_prd, ncl_msk
                 tf.keras.backend.clear_session()
                 gc.collect()
-                
-#%% Class(Main) : process() ---------------------------------------------------
-
-    def process(self):
-
-        pass
 
 #%% Execute -------------------------------------------------------------------
 

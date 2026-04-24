@@ -21,9 +21,9 @@ unet_parameters = {
     
     # Procedure
     "run_patches_0" : 0, # new
-    "run_patches_1" : 1, # from preexisting masks
+    "run_patches_1" : 0, # from preexisting masks
     "run_annotate"  : 0,
-    "run_train"     : 0,
+    "run_train"     : 1,
     
     # Paths
     "train_path" : Path.cwd() / "data" / "train_nuclei", 
@@ -33,11 +33,11 @@ unet_parameters = {
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
     
-    # train() -----------------------------------------------------------------
+    # model -------------------------------------------------------------------
     
     # Paths
     "root_path"          : None,
-    "model_name"         : "model_256_edt_1024-48",
+    "model_name"         : None,
 
     # Build
     "input_shape"        : (None, None, 1),
@@ -49,7 +49,7 @@ unet_parameters = {
     "batch_size"         : 64,
     "validation_split"   : 0.2,
     "metric"             : "soft_dice_coef",
-    "learning_rate"      : 0.0001,
+    "learning_rate"      : 0.001,
     "patience"           : 64,
 
     # Prepare
@@ -96,6 +96,8 @@ class TrainNuclei:
                 
     def extract_patches_1(self):
         
+        """ somehow broken """
+        
         msk_paths = list(self.train_path.glob("*_mask.tif"))
         
         for p, msk_path in enumerate(msk_paths):
@@ -105,7 +107,7 @@ class TrainNuclei:
             mtd_path = self.main.mtd_paths[p]
             vws_path = self.main.vws_paths[p]
             pvw_its_path = vws_path / "preview_intensities.pkl"
-            view_idx  = int(msk_path.stem.split("_")[-5])
+            roi_idx  = int(msk_path.stem.split("_")[-5])
             patch_idx = int(msk_path.stem.split("_")[-2])
                         
             # Load
@@ -115,11 +117,12 @@ class TrainNuclei:
                 pvw_its = pickle.load(file)
             ncl = load_view(
                 qpt_path, metadata=mtd, channels="DAPI", 
-                level=0, view_idx=view_idx,
+                level=0, roi_idx=roi_idx,
                 )
             ncl = norm_data(ncl, pvw_its, channel_idx=0)
             
             # Extract patch
+            print(patch_idx)
             patch = extract_patches(
                 ncl, self.extract_patch_size, self.extract_patch_overlap)[patch_idx]
             
@@ -150,15 +153,11 @@ class TrainNuclei:
         msks = np.stack(msks)
         imgs = np.stack(imgs)
             
-        # Normalize data (images)
+        # Normalize data
         imgs = imgs.astype("float32") / 255
             
         # Setup model
-        if self.model_name is not None:
-            model_path = Path.cwd() / self.model_name
-            self.unet = UNet(parameters=None, model_path=model_path)
-        else:
-            self.unet = UNet(parameters=self.parameters, model_path=None)
+        self.unet = UNet(parameters=self.parameters, model_path=None)
         
         # Train model
         self.unet.train(imgs, msks)

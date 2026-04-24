@@ -28,7 +28,6 @@ class UNet:
         
         # Run
         self.initialize()
-        self.build()
 
 #%% Class(UNet) initialize() --------------------------------------------------
 
@@ -40,39 +39,46 @@ class UNet:
                 "User must either provide 'parameters' or 'model_path', but not both"
                 )
                     
-        # Load parameters
+        # Load parameters (if not provided)
         if self.parameters is None:
             
             with open(self.model_path / "parameters.pkl", "rb") as file:
                 self.parameters = pickle.load(file)
                 print(f"({self.model_path.name}) : load parameters ")
-        
-        # Parameters as attributes
+
         for key, val in self.parameters.items():
             if not isinstance(val, dict):
                 setattr(self, key, val)
-
+        
     def initialize_train(self):
         
-        # Create model name (if not provided)
-        if self.model_name is None:
-            if isinstance(self.X, list):
-                n = len(self.X)
-            elif isinstance(self.X, np.ndarray):
-                n = self.X.shape[0]
-            n_trn = int(n - (n * self.validation_split))
-            self.model_name = (
-                "model_"
-                f"{self.patch_size}_"
-                f"{self.mask_method}_"
-                f"{self.augment_iterations}"
-                f"-{n_trn}"
-                )
+        # Get model path (if not provided)
+        if self.model_path is None:
             
-        # Create model path and directory
-        if self.root_path is None:
-            self.root_path = Path.cwd()
-        self.model_path = self.root_path / self.model_name
+            for key, val in self.parameters.items():
+                if not isinstance(val, dict):
+                    setattr(self, key, val)
+            
+            # Default model name (if not provided)
+            if self.parameters["model_name"] is None:
+                if isinstance(self.X, list):
+                    n = len(self.X)
+                elif isinstance(self.X, np.ndarray):
+                    n = self.X.shape[0]
+                n_trn = int(n - (n * self.validation_split))
+                self.model_name = (
+                    "model_"
+                    f"{self.patch_size}_"
+                    f"{self.mask_method}_"
+                    f"{self.augment_iterations}"
+                    f"-{n_trn}"
+                    )
+                
+            if self.root_path is None:
+                self.root_path = Path.cwd()
+            self.model_path = self.root_path / self.model_name
+        
+        # Create model directory
         if not self.model_path.exists():
             self.model_path.mkdir(exist_ok=True)
         
@@ -101,9 +107,10 @@ class UNet:
             )
         
         # Load weights (optional)
-        if self.model_path is not None:
+        weights_path = self.model_path / "weights.h5"
+        if weights_path.exists():
             print(f"({self.model_path.name}) : load weights ")
-            self.model.load_weights(self.weights_path)
+            self.model.load_weights(weights_path)
                         
 #%% Class(UNet) train() -------------------------------------------------------
 
@@ -117,8 +124,10 @@ class UNet:
             vrange=(0, 1),
             )
         self.initialize_train()
+        self.build()
         Prepare(self)
         
+        # Callbacks
         self.callbacks = [CallBacks(self)]
         
         try:
@@ -143,6 +152,8 @@ class UNet:
 #%% Class(Unet) predict() -----------------------------------------------------
 
     def predict(self, X, patch_overlap=None, batch_size=32, chunk_size=None):
+        
+        self.build()
         
         # Initialize
         if patch_overlap is None:

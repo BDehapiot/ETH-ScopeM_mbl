@@ -31,11 +31,11 @@ unet_parameters = {
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
     
-    # train() -----------------------------------------------------------------
+    # model -------------------------------------------------------------------
     
     # Paths
     "root_path"          : None,
-    "model_name"         : None,
+    "model_name"         : "model-test_256_binary_1024-56",
 
     # Build
     "input_shape"        : (None, None, 1),
@@ -136,15 +136,11 @@ class TrainPreview:
         msks = np.stack(msks)
         imgs = np.stack(imgs)
             
-        # Normalize data (images)
+        # Normalize data
         imgs = imgs.astype("float32") / 255
             
         # Setup model
-        if self.model_name is not None:
-            model_path = Path.cwd() / self.model_name
-            self.unet = UNet(parameters=None, model_path=model_path)
-        else:
-            self.unet = UNet(parameters=self.parameters, model_path=None)
+        self.unet = UNet(parameters=self.parameters, model_path=None)
         
         # Train model
         self.unet.train(imgs, msks)

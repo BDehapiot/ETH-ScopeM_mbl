@@ -249,7 +249,7 @@ def get_nuclei_centroids(msk, n_levels=5):
         ctd["x"].append(x / 2 ** level) 
     return ctd
 
-#%% function(s) : crops -------------------------------------------------------
+#%% function(s) : get_crops() -------------------------------------------------
 
 def get_crops(stk, ctd, crop_size=32, crop_fraction=0.1, stk_level=1):
     
