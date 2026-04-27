@@ -153,8 +153,10 @@ class CallBacks(Callback):
             size=10, color="k",
             transform=axis.transAxes, ha="center", va="center",
             )
+        y_min, y_max = axis.get_ylim()
+        bvl_position = (best_val_loss - y_min) / (y_max - y_min)
         axis.text(
-            1.025, best_val_loss, f"{best_val_loss:.4f}", 
+            1.025, bvl_position, f"{best_val_loss:.4f}", 
             size=10, color="k",
             transform=axis.transAxes, ha="left", va="center",
             )
@@ -167,7 +169,7 @@ class CallBacks(Callback):
         
         axis.set_title(model_name, pad=20)
         axis.set_xlim(0, epochs)
-        axis.set_ylim(0, 1)
+        # axis.set_ylim(0, 1)
         axis.set_xlabel("epochs")
         axis.set_ylabel("loss")
         axis.legend(
@@ -182,20 +184,27 @@ class CallBacks(Callback):
         
 #%% Class(CallBacks) : predict_examples() ------------------------------------- 
         
-    # def predict_examples(self, max_img=50, max_mb=100):
+    def predict_examples(self, max_img=50, max_mb=100):
                  
-    #     # Determine size
-    #     nS = self.X_val.shape[0]
-    #     nY = self.X_val.shape[1]
-    #     nX = self.X_val.shape[2]
-    #     max_size = ((max_mb * 2 ** 20) / (nY * nX)) / 4 
-    #     max_size = np.floor(max_size).astype(int)
-    #     size = np.min([max_img, max_size, nS])
+        # Determine size
+        nS = self.X_val.shape[0]
+        nY = self.X_val.shape[1]
+        nX = self.X_val.shape[2]
+        if len(self.autoencoder.input_shape) == 4:
+            nC = self.X_val.shape[3]
+        elif len(self.autoencoder.input_shape) == 3:
+            nC = 1
+            
+        max_size = (((max_mb * 2 ** 20) / (nY * nX)) / 4 ) * nC
+        max_size = np.floor(max_size).astype(int)
+        size = np.min([max_img, max_size, nS])
         
-    #     # Predict
-    #     idxs = np.random.choice(
-    #         self.X_val.shape[0], size=size, replace=False)
-    #     prds = self.model.predict(self.X_val[idxs, ...]).squeeze()
+        print(size)
+        
+        # # Predict
+        # idxs = np.random.choice(
+        #     self.X_val.shape[0], size=size, replace=False)
+        # prds = self.model.predict(self.X_val[idxs, ...]).squeeze()
                 
     #     # Assemble predict_examples
     #     predict_examples = []

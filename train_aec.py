@@ -18,7 +18,7 @@ autoencoder_parameters = {
     
     # Procedure
     "run_crops"        : 0,
-    "run_train"        : 1,
+    "run_train"        : 0,
         
     # get_crops() 
     "crop_size"        : 32,
@@ -126,26 +126,39 @@ if __name__ == "__main__":
     
 #%% Predict
     
-    # # Parameters
-    # subset = 0.01
+    # Parameters
+    subset = 0.01
+    model_name = "model_32_2_512_59273"
 
-    # # Paths
-    # crp_nrm_path = main.data_path / "crops_raw.npz"
+    # Paths
+    crp_nrm_path = main.data_path / "crops_raw.npz"
     
-    # # Load
-    # crp_nrm = load_compressed_stack(crp_nrm_path)
-    # crp_num = crp_nrm.shape[0]   
+    # Load model
+    model = AutoEncoder(
+        parameters=None, 
+        model_path=Path.cwd() / model_name
+        )
     
-    # # Select data
-    # idxs = np.random.choice(
-    #     np.arange(0, crp_num), size=int(crp_num * subset), replace=False)
-    # X = crp_nrm[idxs][:, :7, ...]
+    # Load data
+    crp_nrm = load_compressed_stack(crp_nrm_path)
+    crp_num = crp_nrm.shape[0]   
     
-    # # Predict
-    # prd = train.predict(X)
+    # Select data
+    idxs = np.random.choice(
+        np.arange(0, crp_num), size=int(crp_num * subset), replace=False)
+    X = crp_nrm[idxs][:, :7, ...]
+    X = np.transpose(X, (0, 2, 3, 1)) # transposition
     
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(X)
-    # vwr.add_image(prd)
+    # Normalize data
+    X = X.astype("float32") / 255
+    
+    # Predict
+    prd = model.predict(X)
+    prd = np.transpose(prd, (0, 3, 1, 2))
+    X = np.transpose(X, (0, 3, 1, 2))
+    
+    # Display
+    import napari
+    vwr = napari.Viewer()
+    vwr.add_image(X)
+    vwr.add_image(prd)

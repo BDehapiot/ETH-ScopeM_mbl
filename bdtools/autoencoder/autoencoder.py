@@ -199,6 +199,58 @@ class AutoEncoder:
             self.autoencoder.stop_training = True
             for cb in self.callbacks:
                 cb.on_train_end(logs={})
+                
+#%% Class (AutoEncoder) predict() ---------------------------------------------
+
+    def predict(self, X, batch_size=32, chunk_size=None):
+    
+        self.build()
+        
+        # Initialize
+        multichannel = True if self.input_shape[-1] > 1 else False
+        Check(X, name="X", ctype=(np.ndarray, list), dtype=float, vrange=(0, 1))
+        
+        # Convert X to list
+        if isinstance(X, list):
+            islist = True
+        else:
+            islist = False
+            X = [X]
+            
+        self.X = X # Debug
+        
+        prds = []
+        for arr in X:
+            
+            shape = arr.shape[:-1] if multichannel else arr.shape
+                    
+            # Predict
+            
+            if chunk_size:
+                
+                n_chunks = int(np.ceil(arr.shape[0] / chunk_size))
+                print(f"n_chunks = {n_chunks}")
+                
+                prd = []
+                for i, idx in enumerate(range(0, len(arr), chunk_size)):
+                    chunk = arr[idx:idx + chunk_size]
+                    prd.append(
+                        self.autoencoder.predict(chunk, batch_size=batch_size))
+                prd = np.concatenate(prd, axis=0)
+                
+                del chunk
+            
+            else:
+                
+                prd = self.autoencoder.predict(arr, batch_size=batch_size)
+                
+                # del patches
+                
+            # Merge patches
+            prd = prd.squeeze()
+            prds.append(prd)
+    
+        return prds if islist else prds[0]
 
 #%% Execute -------------------------------------------------------------------
 
