@@ -16,21 +16,21 @@ from functions import (
     )
 
 # bdtools
-from bdtools.unet.unet import UNet
+from bdtools.model.model import Model
 
 #%% Inputs --------------------------------------------------------------------
 
 main_parameters = {
     
     # Channels
-    "channels" : [
+    "channels"  : [
         "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF"
         ],
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
-    "model_preview_name" : "model-preview_256_binary_1024-56",
-    "model_nuclei_name"  : "model-nuclei_256_edt_1024-48",
+    "model_preview_name" : "model-sm_preview_256_binary_227-1024",
+    "model_nuclei_name"  : "model-sm_nuclei_256_edt_192-1024",
     
     # extract()
     "pvw_level" : 4,
@@ -101,8 +101,8 @@ class Main:
                 if not vws_path.exists():
                     
                     # Model
-                    if "unet_preview" not in locals():
-                        unet_preview = UNet(
+                    if "model_preview" not in locals():
+                        model_preview = Model(
                             parameters=None, 
                             model_path=Path.cwd() / self.model_preview_name
                             )
@@ -119,7 +119,8 @@ class Main:
                     
                     # Preview mask
                     pvw_prp = prep_preview(pvw_raw, channels=[2, 5, 6])
-                    pvw_msk = unet_preview.predict(pvw_prp) > 0.5
+                    pvw_msk = model_preview.predict(
+                        pvw_prp, batch_size=32) > 0.5
                     pvw_msk = (pvw_msk * 255).astype("uint8")
                     
                     # Intensities
@@ -164,8 +165,8 @@ class Main:
             if not ncl_msk_path.exists():
                 
                 # Model
-                if "unet_nuclei" not in locals():
-                    unet_nuclei = UNet(
+                if "model_nuclei" not in locals():
+                    model_nuclei = Model(
                         parameters=None, 
                         model_path=Path.cwd() / self.model_nuclei_name
                         )
@@ -183,9 +184,9 @@ class Main:
                     )
                                    
                 # Nuclei prediction
-                ncl_prd = unet_nuclei.predict(
+                ncl_prd = model_nuclei.predict(
                     norm_data(ncl, pvw_its, channel_idx=0), 
-                    batch_size=64, chunk_size=5000, patch_overlap=32,
+                    patch_overlap=32, batch_size=64, chunk_size=5000, 
                     )
 
                 # Nuclei mask

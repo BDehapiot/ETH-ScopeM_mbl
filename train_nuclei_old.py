@@ -1,0 +1,169 @@
+#%% Imports -------------------------------------------------------------------
+
+import pickle
+import numpy as np
+np.random.seed(42)
+from skimage import io
+from pathlib import Path
+from main import Main, main_parameters
+
+# function(s)
+from functions import load_view, norm_data
+
+# bdtools
+from bdtools.unet.unet import UNet
+from bdtools.annotate import Annotate
+from bdtools.patch import extract_patches
+
+#%% Inputs --------------------------------------------------------------------
+
+unet_parameters = {
+    
+    # Procedure
+    "run_patches_0" : 0, # new
+    "run_patches_1" : 0, # from preexisting masks
+    "run_annotate"  : 0,
+    "run_train"     : 1,
+    
+    # Paths
+    "train_path" : Path.cwd() / "data" / "train_nuclei", 
+    
+    # extract_patches()
+    "n_patches"             : 10, # save n_patches per preview image
+    "extract_patch_size"    : 256,
+    "extract_patch_overlap" : 128,
+    
+    # model -------------------------------------------------------------------
+    
+    # Paths
+    "root_path"          : None,
+    "model_name"         : None,
+
+    # Build
+    "input_shape"        : (None, None, 1),
+    "backbone"           : "resnet18",
+    "activation"         : "sigmoid",
+        
+    # Train
+    "epochs"             : 256,
+    "batch_size"         : 64,
+    "validation_split"   : 0.2,
+    "metric"             : "soft_dice_coef",
+    "learning_rate"      : 0.001,
+    "patience"           : 64,
+
+    # Prepare
+    "patch_size"         : 256,
+    "patch_overlap"      : 128,
+    "mask_method"        : "edt",
+            
+    # Augment
+    "augment_iterations" : 1024,
+    "augment_invert_p"   : 0,
+    "augment_gamma_p"    : 0.5,
+    "augment_gblur_p"    : 0.5,
+    "augment_noise_p"    : 0.5,
+    "augment_flip_p"     : 0.5,
+    "augment_distord_p"  : 0.5,
+    
+    }
+
+#%% Class(TrainNuclei) --------------------------------------------------------
+
+class TrainNuclei:
+    def __init__(self, main, parameters=None):
+        self.main = main
+        self.parameters = parameters | main.parameters
+        for key, val in self.parameters.items():
+            if not isinstance(val, dict):
+                setattr(self, key, val)
+                
+        # Run
+        if self.run_patches_0:
+            self.extract_patches_0()
+        if self.run_patches_1:
+            self.extract_patches_1()
+        if self.run_annotate:
+            self.annotate()
+        if self.run_train:
+            self.train()
+
+#%% Class(TrainNuclei) extract_patches() --------------------------------------
+
+    def extract_patches_0(self):
+        """ to be implemented """
+        pass
+                
+    def extract_patches_1(self):
+        
+        """ somehow broken """
+        
+        msk_paths = list(self.train_path.glob("*_mask.tif"))
+        
+        for p, msk_path in enumerate(msk_paths):
+            
+            # Parse paths
+            qpt_path = self.main.qpt_paths[p]
+            mtd_path = self.main.mtd_paths[p]
+            vws_path = self.main.vws_paths[p]
+            pvw_its_path = vws_path / "preview_intensities.pkl"
+            roi_idx  = int(msk_path.stem.split("_")[-5])
+            patch_idx = int(msk_path.stem.split("_")[-2])
+                        
+            # Load
+            with open(mtd_path, "rb") as file:
+                mtd = pickle.load(file)
+            with open(pvw_its_path, "rb") as file:
+                pvw_its = pickle.load(file)
+            ncl = load_view(
+                qpt_path, metadata=mtd, channels="DAPI", 
+                level=0, roi_idx=roi_idx,
+                )
+            ncl = norm_data(ncl, pvw_its, channel_idx=0)
+            
+            # Extract patch
+            print(patch_idx)
+            patch = extract_patches(
+                ncl, self.extract_patch_size, self.extract_patch_overlap)[patch_idx]
+            
+            # Save
+            patch_name = str(msk_path).replace("_mask", "")
+            io.imsave(
+                self.train_path / patch_name,
+                patch, check_contrast=False,
+                )
+                            
+#%% Class(TrainNuclei) annotate() ---------------------------------------------
+
+    def annotate(self):
+        Annotate(self.train_path)  
+        
+#%% Class(TrainNuclei) train() ------------------------------------------------
+    
+    def train(self):
+        
+        # Load data
+        msk_paths = list(self.train_path.glob("*_mask.tif"))
+        msks, imgs = [], []
+        for path in msk_paths:
+            msks.append(io.imread(path))
+            imgs.append(io.imread(
+                str(path).replace("_mask", "")
+                ))
+        msks = np.stack(msks)
+        imgs = np.stack(imgs)
+            
+        # Normalize data
+        imgs = imgs.astype("float32") / 255
+            
+        # Setup model
+        self.unet = UNet(parameters=self.parameters, model_path=None)
+        
+        # Train model
+        self.unet.train(imgs, msks)
+
+#%% Execute -------------------------------------------------------------------
+
+if __name__ == "__main__":
+    main = Main(parameters=main_parameters)
+    train = TrainNuclei(main, parameters=unet_parameters)
