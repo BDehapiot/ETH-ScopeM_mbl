@@ -3,19 +3,17 @@
 import napari
 import pickle
 import numpy as np
-from skimage import io
 from pathlib import Path
 from main import Main, main_parameters
 
 # functions
-from functions import load_view, load_compressed_stack
+from functions import load_compressed_stack
 
 # Qt
-from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
     QButtonGroup, QGroupBox, QHBoxLayout, QVBoxLayout,
     QPushButton, QRadioButton,
-    QWidget, QLabel,
+    QWidget,
     )
 
 #%% Inputs --------------------------------------------------------------------
@@ -62,7 +60,6 @@ class Display:
     def load_data(self):
         
         # Paths
-        qpt_path = self.qpt_paths[self.vws_idx]
         mtd_path = self.mtd_paths[self.vws_idx]
         vws_path = self.vws_paths[self.vws_idx]
         pvw_its_path = vws_path / "preview_intensities.pkl"
@@ -77,10 +74,10 @@ class Display:
         with open(ncl_ctd_path, "rb") as file:
             self.ncl_ctd = pickle.load(file)
             self.ncl_ctd = np.column_stack((
-                self.ncl_ctd["y"][self.stk_level],
-                self.ncl_ctd["x"][self.stk_level],
+                self.ncl_ctd["y"][self.stk_raw_level],
+                self.ncl_ctd["x"][self.stk_raw_level],
                 ))
-        self.stk = load_compressed_stack(stk_raw_path)
+        self.stk_raw = load_compressed_stack(stk_raw_path)
                         
     def auto_contrast(self):
         img = self.vwr.layers["image"].data 
@@ -95,14 +92,14 @@ class Display:
         
     def update_view(self):
         self.load_data()
-        self.vwr.layers["image" ].data = self.stk[self.chn_idx]
+        self.vwr.layers["image" ].data = self.stk_raw[self.chn_idx]
         self.vwr.layers["points"].data = self.ncl_ctd
         self.auto_contrast()
     
     def update_channel(self):    
         self.chn = self.chn_group.checkedButton().text()
         self.chn_idx = self.channels.index(self.chn)
-        self.vwr.layers["image"].data = self.stk[self.chn_idx]
+        self.vwr.layers["image"].data = self.stk_raw[self.chn_idx]
         self.auto_contrast()
             
     # Buttons -----------------------------------------------------------------
@@ -169,7 +166,7 @@ class Display:
         self.load_data()
         
         self.vwr.add_image(
-            self.stk[self.chn_idx], name="image", visible=1,
+            self.stk_raw[self.chn_idx], name="image", visible=1,
             gamma=0.75, 
             )
                 

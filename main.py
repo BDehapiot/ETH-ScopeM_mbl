@@ -13,6 +13,7 @@ from functions import (
     get_nuclei_mask, get_nuclei_centroids,
     save_compressed_stack, load_compressed_stack,
     save_compressed_mask, load_compressed_mask,
+    get_crops,
     )
 
 # bdtools
@@ -39,6 +40,9 @@ main_parameters = {
     # predict()
     "thresh_0"  : 0.25,
     "thresh_1"  : 0.50,
+    
+    # Measure()
+    "crop_size" : 32,
 
     }
 
@@ -54,6 +58,7 @@ class Main:
         # Run
         self.extract()
         self.predict()
+        # self.measure()
         
 #%% Class(Main) : extract() ---------------------------------------------------
 
@@ -206,9 +211,77 @@ class Main:
                 del ncl, ncl_prd, ncl_msk
                 tf.keras.backend.clear_session()
                 gc.collect()
+                
+#%% Class(Main) : measure() ---------------------------------------------------
+
+    def measure(self):
+        
+        for p, vws_path in enumerate(self.vws_paths):
+
+            # Paths
+            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+            stk_nrm_path = vws_path / "stack_norm.npz"            
+
+            if p == 0:            
+
+                print(f"Main() : measure() : {vws_path.name}")                
+
+                # Load
+                with open(ncl_ctd_path, "rb") as file:
+                    ncl_ctd = pickle.load(file)
+                stk_nrm = load_compressed_stack(stk_nrm_path)
+                
+                # Get crops
+                crp_nrm = get_crops(
+                    stk_nrm, ncl_ctd, 
+                    crop_size=self.crop_size, 
+                    crop_fraction=1, 
+                    stk_level=self.stk_level,
+                    )
+                self.crp_nrm = crp_nrm
+                
 
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
+    
+#%% 
+
+    # Imports
+    import numpy as np
+    from scipy import signal
+
+    # Parameters
+    channel = 0
+    
+    # Initialize
+    crp_nrm = main.crp_nrm
+    crp_nrm = crp_nrm.astype("float32") / 255
+    
+    # Create Gaussian kernel
+    kernel = signal.windows.gaussian(32, std=8)
+    kernel = np.outer(kernel, kernel)
+    kernel /= np.sum(kernel) 
+    kernel = kernel[None, None, :, :]
+    
+    # Apply Gaussian kernel
+    crp_nrm *= kernel
+    
+    # Measure
+    measures = {
+        "avg" : [], "std" : [], "med" : [], "min" : [], "max" : []}
+    for channel in range(crp_nrm.shape[1]):
+        measures["avg"].append(np.mean(
+            crp_nrm[:, channel, ...], axis=(1, 2)))
+        measures["std"].append(np.std(
+            crp_nrm[:, channel, ...], axis=(1, 2)))
+        measures["med"].append(np.median(
+            crp_nrm[:, channel, ...], axis=(1, 2)))
+        measures["min"].append(np.min(
+            crp_nrm[:, channel, ...], axis=(1, 2)))
+        measures["max"].append(np.max(
+            crp_nrm[:, channel, ...], axis=(1, 2)))
+        
+    # Plot
     
