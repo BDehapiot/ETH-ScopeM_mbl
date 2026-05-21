@@ -25,7 +25,8 @@ parameters = {
     "model_type"         : "aec",
     "input_shape"        : (None, None, 1),
     "backbone"           : "resnet18", # (sm)
-    "filters"            : [32, 64, 128], # (aec)
+    "filters"            : [32, 64, 128], # (cls & aec)
+    "n_class"            : 6, # (cls)
     "latent_size"        : 128, # (aec)
     "activation"         : "sigmoid",
     "loss"               : "mse",
@@ -160,6 +161,17 @@ class Model:
                         "model-sm_"
                         f"{self.patch_size}_"
                         f"{self.mask_method}_"
+                        f"{n_trn}-"
+                        f"{self.augment_iterations}"
+                        )
+                    
+                if self.model_type == "cls":
+                    
+                    self.model_name = (
+                        "model-aec_"
+                        f"{self.patch_size}_"
+                        f"{len(self.filters)}_"
+                        f"{self.n_class}_"
                         f"{n_trn}-"
                         f"{self.augment_iterations}"
                         )
