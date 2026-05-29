@@ -2,12 +2,25 @@
 
 import sys
 import numpy as np
-import tensorflow as tf
 
 # bdtools
 from bdtools.augment import augment
 from bdtools.mask import process_masks
 from bdtools.patch import extract_patches
+
+# tensorflow
+import tensorflow as tf
+from tensorflow.keras.utils import to_categorical
+
+# scikitlearn
+from sklearn.utils import class_weight
+
+#%% Comments ------------------------------------------------------------------
+
+"""
+- patching is not implemented for model_type == "cls"
+- augment() is not implemented for model_type == "cls"
+"""
 
 #%% Class(Prepare) ------------------------------------------------------------
 
@@ -31,6 +44,12 @@ class Prepare:
         if self.display:
             self.display_data()
             sys.exit(0)
+        if self.main.use_sample_weights:
+            self.get_sample_weights()
+        if self.main.model_type == "cls":
+            if self.main.balance:
+                self.balance_data()
+            self.one_hot_encoding()
         self.tensorize_data()
         
         # Pass attributes to main class
@@ -42,25 +61,34 @@ class Prepare:
         self.main.X_val = self.X_val
         self.main.y_val = self.y_val
         self.main.val_tensor = self.val_tensor
+        if self.main.use_sample_weights:
+            self.main.sample_weights = self.sample_weights
     
 #%% Class(Prepare) prepare_masks() --------------------------------------------
 
     def prepare_masks(self):
-        self.y = process_masks(self.y, method=self.mask_method)
-        if isinstance(self.y, list):
-            self.y = [
-                arr.astype("float32") 
-                if not np.issubdtype(arr.dtype, np.floating) 
-                else arr for arr in self.y
-                ]
-        if isinstance(self.y, np.ndarray):
-            if not np.issubdtype(self.y.dtype, np.floating):
-                self.y = self.y.astype("float32")
         
+        if self.main.model_type == "sm":
+        
+            self.y = process_masks(self.y, method=self.mask_method)
+            
+            if isinstance(self.y, list):
+                self.y = [
+                    arr.astype("float32") 
+                    if not np.issubdtype(arr.dtype, np.floating) 
+                    else arr for arr in self.y
+                    ]
+                
+            if isinstance(self.y, np.ndarray):
+                if not np.issubdtype(self.y.dtype, np.floating):
+                    self.y = self.y.astype("float32")
+                            
 #%% Class(Prepare) prepare_patches() ------------------------------------------
         
     def prepare_patches(self):
+        
         multichannel = True if self.input_shape[-1] > 1 else False
+        
         if isinstance(self.X, list):
             self.X_patches = []
             for arr_X in self.X:
@@ -69,25 +97,31 @@ class Prepare:
                     multichannel=multichannel
                     )
             if self.y is not None:  
-                self.y_patches = []
-                for arr_y in self.y:
-                    self.y_patches += extract_patches(
-                        arr_y, self.patch_size, self.patch_overlap)
+                if not self.main.model_type == "cls":
+                    self.y_patches = []
+                    for arr_y in self.y:
+                        self.y_patches += extract_patches(
+                            arr_y, self.patch_size, self.patch_overlap)
+        
         if isinstance(self.X, np.ndarray):
             self.X_patches = extract_patches(
                 self.X, self.patch_size, self.patch_overlap, 
                 multichannel=multichannel
                 )
             if self.y is not None: 
-                self.y_patches = extract_patches(
-                    self.y, self.patch_size, self.patch_overlap)
+                if not self.main.model_type == "cls":
+                    self.y_patches = extract_patches(
+                        self.y, self.patch_size, self.patch_overlap)
+        
         self.X = np.stack(self.X_patches)
         if self.y is not None: 
-            self.y = np.stack(self.y_patches)
+            if not self.main.model_type == "cls":
+                self.y = np.stack(self.y_patches)
 
 #%% Class(Prepare) split_data() -----------------------------------------------
 
     def split_data(self):
+        
         n_total = self.X.shape[0]
         n_val = int(n_total * self.validation_split)
         idx = np.random.permutation(np.arange(0, n_total))
@@ -100,9 +134,17 @@ class Prepare:
             self.y_trn = None
             self.y_val = None
             
+        print("\ndata shapes")
+        print("X_trn :", self.X_trn.shape)
+        print("X_val :", self.X_val.shape)
+        if self.y is not None:  
+            print("y_trn :", self.y_trn.shape)
+            print("y_val :", self.y_val.shape)
+            
 #%% Class(Prepare) augment_data() ---------------------------------------------
             
     def augment_data(self):
+        
         self.X_trn, self.y_trn = augment(
             self.X_trn, 
             msks=self.y_trn, 
@@ -115,29 +157,89 @@ class Prepare:
             distort_p=self.augment_distort_p,
             preserve_range=True,
             )
-                
+        
+        # Print augmented data shape
+        print("\naugmented data shapes")
+        print("X_trn :", self.X_trn.shape)
+        print("X_val :", self.X_val.shape)
+        if self.y is not None:  
+            print("y_trn :", self.y_trn.shape)
+            print("y_val :", self.y_val.shape)
+                            
+#%% Class(Prepare) balance_data() ---------------------------------------------
+
+    def balance_data(self):
+        _, count = np.unique(self.y_trn, return_counts=True)
+        cmin = np.min(count)
+        X_trn, y_trn = [], []
+        for c in range(self.main.n_classes):
+            idxs = np.random.choice(
+                np.argwhere(self.y_trn == c).squeeze(), size=cmin)
+            X_trn.append(self.X_trn[idxs])
+            y_trn.append(self.y_trn[idxs])
+        self.X_trn = np.concatenate(X_trn, axis=0)
+        self.y_trn = np.concatenate(y_trn, axis=0)
+       
+        # Print balanced data shape
+        print("\nbalanced data shapes")
+        print("X_trn :", self.X_trn.shape)
+        print("X_val :", self.X_val.shape)
+        if self.y is not None:  
+            print("y_trn :", self.y_trn.shape)
+            print("y_val :", self.y_val.shape, "\n")
+     
 #%% Class(Prepare) display_data() ---------------------------------------------
 
     def display_data(self):
+        
         import napari
+        
+        if self.input_shape[-1] > 1 and self.input_shape[-1] != 3:
+            self.X_trn = np.transpose(self.X_trn, (0, 3, 1, 2))
+        
         vwr = napari.Viewer()
         vwr.add_image(self.X_trn, name="X_trn")
-        if self.y is not None:
+        if self.y is not None and not self.main.model_type == "cls":
             vwr.add_image(self.y_trn, name="y_trn")
-            vwr.grid.enabled = True
+            vwr.grid.enabled = True   
+     
+#%% Class(Prepare) get_sample_weights() ---------------------------------------
+
+    def get_sample_weights(self):        
+        self.sample_weights = class_weight.compute_class_weight(
+            class_weight="balanced",
+            classes=np.unique(self.y_trn),
+            y=self.y_trn,
+            )
+        self.sample_weights = dict(enumerate(self.sample_weights)) 
+        self.sample_weights = np.array([
+            self.sample_weights[idx] for idx in self.y_trn])
+     
+#%% Class(Prepare) one_hot_encoding() -----------------------------------------
         
-#%% Class(Prepare) tensorize_data() -------------------------------------------
+    def one_hot_encoding(self):
+        self.y_trn = to_categorical(
+            self.y_trn, num_classes=self.main.n_classes)
+        self.y_val = to_categorical(
+            self.y_val, num_classes=self.main.n_classes)
+            
+#%% Class(Prepare) tensorize_data() ------------------------------------------- 
 
     def tensorize_data(self):
-
+        
         # Build training & validation tensors
         trn_target = self.y_trn if self.y_trn is not None else self.X_trn
         val_target = self.y_val if self.y_val is not None else self.X_val
-        self.trn_tensor = tf.data.Dataset.from_tensor_slices(
-            (self.X_trn, trn_target))
+        
+        if self.main.use_sample_weights:
+            self.trn_tensor = tf.data.Dataset.from_tensor_slices(
+                (self.X_trn, trn_target, self.sample_weights))
+        else:
+            self.trn_tensor = tf.data.Dataset.from_tensor_slices(
+                (self.X_trn, trn_target))
         self.val_tensor = tf.data.Dataset.from_tensor_slices(
             (self.X_val, val_target))
-                
+            
         # Optimizations
         self.trn_tensor = (
             self.trn_tensor

@@ -42,7 +42,7 @@ main_parameters = {
     "thresh_1"  : 0.50,
     
     # Measure()
-    "crop_size" : 32,
+    # "crop_size" : 32,
 
     }
 
@@ -214,31 +214,31 @@ class Main:
                 
 #%% Class(Main) : measure() ---------------------------------------------------
 
-    def measure(self):
+    # def measure(self):
         
-        for p, vws_path in enumerate(self.vws_paths):
+    #     for p, vws_path in enumerate(self.vws_paths):
 
-            # Paths
-            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            stk_nrm_path = vws_path / "stack_norm.npz"            
+    #         # Paths
+    #         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+    #         stk_nrm_path = vws_path / "stack_norm.npz"            
 
-            if p == 0:            
+    #         if p == 0:            
 
-                print(f"Main() : measure() : {vws_path.name}")                
+    #             print(f"Main() : measure() : {vws_path.name}")                
 
-                # Load
-                with open(ncl_ctd_path, "rb") as file:
-                    ncl_ctd = pickle.load(file)
-                stk_nrm = load_compressed_stack(stk_nrm_path)
+    #             # Load
+    #             with open(ncl_ctd_path, "rb") as file:
+    #                 ncl_ctd = pickle.load(file)
+    #             stk_nrm = load_compressed_stack(stk_nrm_path)
                 
-                # Get crops
-                crp_nrm = get_crops(
-                    stk_nrm, ncl_ctd, 
-                    crop_size=self.crop_size, 
-                    crop_fraction=1, 
-                    stk_level=self.stk_level,
-                    )
-                self.crp_nrm = crp_nrm
+    #             # Get crops
+    #             crp_nrm = get_crops(
+    #                 stk_nrm, ncl_ctd, 
+    #                 crop_size=self.crop_size, 
+    #                 crop_fraction=1, 
+    #                 stk_level=self.stk_level,
+    #                 )
+    #             self.crp_nrm = crp_nrm
                 
 
 #%% Execute -------------------------------------------------------------------

@@ -8,7 +8,7 @@ import segmentation_models as sm
 from bdtools.model import metrics
 
 # tensorflow
-from tensorflow.keras import layers, Model
+from tensorflow.keras import layers, regularizers, Model
 from tensorflow.keras.optimizers import Adam
 
 #%% Class(Build) --------------------------------------------------------------
@@ -51,7 +51,7 @@ class Build:
             self.backbone, 
             input_shape=self.input_shape,
             classes=1, # Parameter
-            activation=self.activation,
+            activation="sigmoid",
             encoder_weights=None,
             )
             
@@ -63,24 +63,30 @@ class Build:
         inputs = layers.Input(shape=self.input_shape)
         x = inputs
         
+        reg = regularizers.l2(0.01)
+        
         # Encoder 
         for f in self.filters:
-            x = layers.Conv2D(f, (3, 3), padding="same")(x)
+            
+            # x = layers.Conv2D(f, (3, 3), padding="same")(x)
+            
+            x = layers.Conv2D(
+                f, (3, 3), padding="same", kernel_regularizer=reg)(x)
             x = layers.BatchNormalization()(x)
             x = layers.Activation("relu")(x)
             x = layers.MaxPooling2D((2, 2))(x)
             
         # Classification head
-        x = layers.GlobalAveragePooling2D()(x)
-        
-        # Add dense layer (learn non-linearities)
-        x = layers.Dense(self.filters[-1] // 2, activation="relu")(x)
-
-        # Add dropout (avoid overfitting)
-        x = layers.Dropout(0.3)(x)
+        x = layers.Flatten()(x)
+        x = layers.Dense(
+            self.filters[-1] // 2, activation="relu", kernel_regularizer=reg)(x)
+        x = layers.Dropout(0.4)(x)
+        x = layers.Dense(
+            self.filters[-1] // 4, activation="relu", kernel_regularizer=reg)(x)
+        x = layers.Dropout(0.4)(x)
                 
         # Output layer
-        outputs = layers.Dense(self.n_class, activation="softmax")(x)
+        outputs = layers.Dense(self.n_classes, activation="softmax")(x)
         
         self.model = Model(inputs, outputs, name="classifier")
         
@@ -117,7 +123,7 @@ class Build:
             x = layers.Conv2D(f, (3, 3), activation="relu", padding="same")(x)
     
         dec_outputs = layers.Conv2D(
-            self.input_shape[-1], (3, 3), activation=self.activation, padding="same")(x)
+            self.input_shape[-1], (3, 3), activation="sigmoid", padding="same")(x)
         
         self.model_dec = Model(dec_inputs, dec_outputs, name="decoder")
     
