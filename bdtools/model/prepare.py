@@ -44,11 +44,7 @@ class Prepare:
         if self.display:
             self.display_data()
             sys.exit(0)
-        if self.main.use_sample_weights:
-            self.get_sample_weights()
         if self.main.model_type == "cls":
-            if self.main.balance:
-                self.balance_data()
             self.one_hot_encoding()
         self.tensorize_data()
         
@@ -61,8 +57,6 @@ class Prepare:
         self.main.X_val = self.X_val
         self.main.y_val = self.y_val
         self.main.val_tensor = self.val_tensor
-        if self.main.use_sample_weights:
-            self.main.sample_weights = self.sample_weights
     
 #%% Class(Prepare) prepare_masks() --------------------------------------------
 
@@ -155,6 +149,7 @@ class Prepare:
             noise_p=self.augment_noise_p,
             flip_p=self.augment_flip_p,
             distort_p=self.augment_distort_p,
+            balance=self.augment_balance,
             preserve_range=True,
             )
         
@@ -164,57 +159,8 @@ class Prepare:
         print("X_val :", self.X_val.shape)
         if self.y is not None:  
             print("y_trn :", self.y_trn.shape)
-            print("y_val :", self.y_val.shape)
-                            
-#%% Class(Prepare) balance_data() ---------------------------------------------
-
-    def balance_data(self):
-        _, count = np.unique(self.y_trn, return_counts=True)
-        cmin = np.min(count)
-        X_trn, y_trn = [], []
-        for c in range(self.main.n_classes):
-            idxs = np.random.choice(
-                np.argwhere(self.y_trn == c).squeeze(), size=cmin)
-            X_trn.append(self.X_trn[idxs])
-            y_trn.append(self.y_trn[idxs])
-        self.X_trn = np.concatenate(X_trn, axis=0)
-        self.y_trn = np.concatenate(y_trn, axis=0)
-       
-        # Print balanced data shape
-        print("\nbalanced data shapes")
-        print("X_trn :", self.X_trn.shape)
-        print("X_val :", self.X_val.shape)
-        if self.y is not None:  
-            print("y_trn :", self.y_trn.shape)
             print("y_val :", self.y_val.shape, "\n")
-     
-#%% Class(Prepare) display_data() ---------------------------------------------
-
-    def display_data(self):
-        
-        import napari
-        
-        if self.input_shape[-1] > 1 and self.input_shape[-1] != 3:
-            self.X_trn = np.transpose(self.X_trn, (0, 3, 1, 2))
-        
-        vwr = napari.Viewer()
-        vwr.add_image(self.X_trn, name="X_trn")
-        if self.y is not None and not self.main.model_type == "cls":
-            vwr.add_image(self.y_trn, name="y_trn")
-            vwr.grid.enabled = True   
-     
-#%% Class(Prepare) get_sample_weights() ---------------------------------------
-
-    def get_sample_weights(self):        
-        self.sample_weights = class_weight.compute_class_weight(
-            class_weight="balanced",
-            classes=np.unique(self.y_trn),
-            y=self.y_trn,
-            )
-        self.sample_weights = dict(enumerate(self.sample_weights)) 
-        self.sample_weights = np.array([
-            self.sample_weights[idx] for idx in self.y_trn])
-     
+                                          
 #%% Class(Prepare) one_hot_encoding() -----------------------------------------
         
     def one_hot_encoding(self):
@@ -231,12 +177,8 @@ class Prepare:
         trn_target = self.y_trn if self.y_trn is not None else self.X_trn
         val_target = self.y_val if self.y_val is not None else self.X_val
         
-        if self.main.use_sample_weights:
-            self.trn_tensor = tf.data.Dataset.from_tensor_slices(
-                (self.X_trn, trn_target, self.sample_weights))
-        else:
-            self.trn_tensor = tf.data.Dataset.from_tensor_slices(
-                (self.X_trn, trn_target))
+        self.trn_tensor = tf.data.Dataset.from_tensor_slices(
+            (self.X_trn, trn_target))
         self.val_tensor = tf.data.Dataset.from_tensor_slices(
             (self.X_val, val_target))
             
@@ -254,3 +196,18 @@ class Prepare:
             .batch(self.batch_size)
             .prefetch(tf.data.AUTOTUNE)
             )
+        
+#%% Class(Prepare) display_data() ---------------------------------------------
+
+    def display_data(self):
+        
+        import napari
+        
+        if self.input_shape[-1] > 1 and self.input_shape[-1] != 3:
+            self.X_trn = np.transpose(self.X_trn, (0, 3, 1, 2))
+        
+        vwr = napari.Viewer()
+        vwr.add_image(self.X_trn, name="X_trn")
+        if self.y is not None and not self.main.model_type == "cls":
+            vwr.add_image(self.y_trn, name="y_trn")
+            vwr.grid.enabled = True   

@@ -54,22 +54,23 @@ class Build:
             activation="sigmoid",
             encoder_weights=None,
             )
-            
+                    
 #%% Class(Build) build_cls() --------------------------------------------------
 
     def build_cls(self):
+               
+        # Initialize
+        if self.regularizer is not None:
+            reg = regularizers.l2(self.regularizer)
+        else:
+            reg = None
         
         # Input layer
         inputs = layers.Input(shape=self.input_shape)
         x = inputs
         
-        reg = regularizers.l2(0.01)
-        
         # Encoder 
         for f in self.filters:
-            
-            # x = layers.Conv2D(f, (3, 3), padding="same")(x)
-            
             x = layers.Conv2D(
                 f, (3, 3), padding="same", kernel_regularizer=reg)(x)
             x = layers.BatchNormalization()(x)
@@ -77,13 +78,16 @@ class Build:
             x = layers.MaxPooling2D((2, 2))(x)
             
         # Classification head
-        x = layers.Flatten()(x)
+        if self.glob_avg_pool:
+            x = layers.GlobalAveragePooling2D()(x)
+        else:
+            x = layers.Flatten()(x)
+        
+        # Add dense layer & dropout 
+        # (learn non-linearities & avoid overfitting)
         x = layers.Dense(
             self.filters[-1] // 2, activation="relu", kernel_regularizer=reg)(x)
-        x = layers.Dropout(0.4)(x)
-        x = layers.Dense(
-            self.filters[-1] // 4, activation="relu", kernel_regularizer=reg)(x)
-        x = layers.Dropout(0.4)(x)
+        x = layers.Dropout(self.dropout)(x)
                 
         # Output layer
         outputs = layers.Dense(self.n_classes, activation="softmax")(x)

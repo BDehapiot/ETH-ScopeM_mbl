@@ -268,7 +268,9 @@ class CallBacks(Callback):
         prds = self.main.predict(self.X_val).squeeze()
         y_pred = np.argmax(prds, axis=1)
         y_true = np.argmax(self.y_val, axis=1)
-        _, y_num = np.unique(y_true, return_counts=True)
+        _, y_num = np.unique(
+            np.argmax(self.y_trn, axis=1), return_counts=True
+            )
         
         # Confusion matrix & statistics
         cmat = confusion_matrix(y_true, y_pred).astype("float32")

@@ -41,15 +41,19 @@ model_parameters = {
 
     # Build -------------------------------------------------------------------
     
+    # Global
     "model_type"         : "cls",
-    "input_shape"        : (None, None, 7),
-    "backbone"           : "resnet18", # (sm)
-    "filters"            : [8, 16], # (cls & aec)
-    "n_classes"          : 6, # (cls)
-    "classes"            : ["oth", "epi", "neu", "mac", "bcl", "tcl"],
-    "latent_size"        : 128, # (aec)
+    "input_shape"        : (None, None, 6),
     "loss"               : "fcl",
     "metric"             : "acc",
+    
+    # cls
+    "filters"            : [16, 32, 64],
+    "n_classes"          : 6,
+    "classes"            : ["oth", "epi", "neu", "mac", "bcl", "tcl"],
+    "glob_avg_pool"      : True,
+    "regularizer"        : 0.001,
+    "dropout"            : 0.3,
     
     # Prepare -----------------------------------------------------------------
     
@@ -59,14 +63,12 @@ model_parameters = {
 
     # Train -------------------------------------------------------------------
     
-    "display"            : False,
+    "display"            : 0,
     "epochs"             : 2048,
-    "batch_size"         : 512,
+    "batch_size"         : 1024,
     "validation_split"   : 0.2,
-    "learning_rate"      : 0.001,
-    "patience"           : 128,
-    "balance"            : True, # (cls)
-    "use_sample_weights" : False,
+    "learning_rate"      : 0.0001,
+    "patience"           : 512,
 
     # Augment -----------------------------------------------------------------
     
@@ -76,6 +78,7 @@ model_parameters = {
     "augment_noise_p"    : 0.0,
     "augment_flip_p"     : 0.5,
     "augment_distort_p"  : 0.5,
+    "augment_balance"    : True, # (cls)
     
     "augment_parameters" : {
         
@@ -86,7 +89,7 @@ model_parameters = {
     
     # Gaussian blur
     "gblur_sigma_low"    : 1,
-    "gblur_sigma_high"   : 3,
+    "gblur_sigma_high"   : 2,
     "gblur_chn"          : "shared",
     
     # Noise
@@ -186,7 +189,8 @@ class TrainClasses:
         
         # Prepare data
         ncl_cls = ncl_cls - 1 # class 1 (other) = 0
-        crp_nrm = crp_nrm[:, :7, ...] # remove autofluo channel
+        crp_nrm = crp_nrm[:, 1:, ...]  # remove dapi channel
+        crp_nrm = crp_nrm[:, :-1, ...] # remove autofluo channel
         crp_nrm = np.transpose(crp_nrm, (0, 2, 3, 1)) # transposition
         crp_nrm = crp_nrm.astype("float32") / 255 # normalize
         

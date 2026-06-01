@@ -78,25 +78,24 @@ def fcl(y_true, y_pred):
     """
     Focal Loss (FCL)
     ----------------
-    Hard-coded gamma=2.0 and alpha=0.25.
-    Expects one-hot encoded y_true.
+    Addresses class imbalance by down-weighting well-classified examples 
+    and focusing training on hard negatives.
     """
     
-    gamma = 4.0
-    print(gamma)
+    gamma = 2.0
     alpha = 0.25
     
-    # 1. Clip predictions to prevent log(0)
+    # Clip predictions to prevent log(0)
     epsilon = K.epsilon()
     y_pred = K.clip(y_pred, epsilon, 1.0 - epsilon)
     
-    # 2. Calculate Cross-Entropy
+    # Calculate Cross-Entropy
     cross_entropy = -y_true * K.log(y_pred)
     
-    # 3. Calculate Focal Loss: alpha * (1 - p_t)^gamma * cross_entropy
+    # Calculate Focal Loss: alpha * (1 - p_t)^gamma * cross_entropy
     loss = alpha * K.pow(1 - y_pred, gamma) * cross_entropy
     
-    # 4. Return the mean of the sum across classes
+    # Return the mean of the sum across classes
     return K.mean(K.sum(loss, axis=-1))
 
 #%% Function(s): accuracy -----------------------------------------------------
