@@ -251,7 +251,7 @@ def get_nuclei_centroids(msk, n_levels=5):
 
 #%% function(s) : get_crops() -------------------------------------------------
 
-def get_crops(stk, ctd, crop_size=32, crop_fraction=0.1, stk_level=1):
+def get_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
     
     # Pad (acc. to crop half size)
     chs = crop_size // 2 # crop half size
@@ -259,17 +259,18 @@ def get_crops(stk, ctd, crop_size=32, crop_fraction=0.1, stk_level=1):
     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
 
     # Extract coordinates
-    ys = ctd["y"][stk_level]
-    xs = ctd["x"][stk_level]
+    ys = ctd["y"][stk_level].astype(int)
+    xs = ctd["x"][stk_level].astype(int)
     
     # Select random coordinates
-    crop_idx = np.random.choice(
-        np.arange(0, len(ys)), 
-        size=int(len(ys) * crop_fraction), 
-        replace=False,
-        )
-    ys = ys[crop_idx].astype(int)
-    xs = xs[crop_idx].astype(int)
+    if crop_fraction is not None:
+        crop_idx = np.random.choice(
+            np.arange(0, len(ys)), 
+            size=int(len(ys) * crop_fraction), 
+            replace=False,
+            )
+        ys = ys[crop_idx]
+        xs = xs[crop_idx]
     
     # Extract crops
     crops = []
@@ -281,6 +282,12 @@ def get_crops(stk, ctd, crop_size=32, crop_fraction=0.1, stk_level=1):
         crops.append(stk[..., y0:y1, x0:x1])
         
     return np.stack(crops)
+
+def prepare_crops(crp_nrm):
+    crp_nrm = np.delete(crp_nrm, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
+    crp_nrm = np.transpose(crp_nrm, (0, 2, 3, 1)) # transposition
+    crp_nrm = crp_nrm.astype("float32") / 255 # normalize
+    return crp_nrm
 
 #%% Execute -------------------------------------------------------------------
 

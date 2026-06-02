@@ -7,7 +7,9 @@ from main import Main, main_parameters
 
 # functions
 from functions import (
-    get_crops, save_compressed_stack, load_compressed_stack)
+    get_crops, prepare_crops, 
+    save_compressed_stack, load_compressed_stack
+    )
 
 # bdtools
 from bdtools.model.model import Model
@@ -18,8 +20,8 @@ parameters = {
     
     # Procedure ---------------------------------------------------------------
     
-    "run_crops"        : 0,
-    "run_train"        : 1,
+    "run_crops"          : 0,
+    "run_train"          : 0,
     
     # Paths -------------------------------------------------------------------
     
@@ -27,8 +29,8 @@ parameters = {
         
     # Crops -------------------------------------------------------------------
     
-    "crop_size"        : 16,
-    "stk_level"        : 1,
+    "crop_size"          : 12,
+    "stk_level"          : 1,
     
     }
 
@@ -43,41 +45,40 @@ model_parameters = {
     
     # Global
     "model_type"         : "cls",
-    "input_shape"        : (None, None, 6),
-    "loss"               : "fcl",
+    "input_shape"        : (None, None, 5),
+    "loss"               : "cce",
     "metric"             : "acc",
     
     # cls
-    "filters"            : [16, 32, 64],
+    "filters"            : [16, 32],
     "n_classes"          : 6,
     "classes"            : ["oth", "epi", "neu", "mac", "bcl", "tcl"],
-    "glob_avg_pool"      : True,
-    "regularizer"        : 0.001,
+    "glob_avg_pool"      : False,
+    "regularizer"        : None,
     "dropout"            : 0.3,
     
     # Prepare -----------------------------------------------------------------
     
-    "patch_size"         : 16,
+    "patch_size"         : 12,
     "patch_overlap"      : 0,
-    "mask_method"        : "edt", # (sm)
 
     # Train -------------------------------------------------------------------
     
     "display"            : 0,
     "epochs"             : 2048,
-    "batch_size"         : 1024,
+    "batch_size"         : 32,
     "validation_split"   : 0.2,
-    "learning_rate"      : 0.0001,
+    "learning_rate"      : 0.001,
     "patience"           : 512,
 
     # Augment -----------------------------------------------------------------
     
-    "augment_iterations" : 16384,
+    "augment_iterations" : 8192,
     "augment_gamma_p"    : 0.0,
     "augment_gblur_p"    : 0.0,
     "augment_noise_p"    : 0.0,
     "augment_flip_p"     : 0.5,
-    "augment_distort_p"  : 0.5,
+    "augment_distort_p"  : 0.0,
     "augment_balance"    : True, # (cls)
     
     "augment_parameters" : {
@@ -162,7 +163,7 @@ class TrainClasses:
                 crp_nrm.append(get_crops(
                     stk_nrm, ncl_ctd, 
                     crop_size=self.crop_size, 
-                    crop_fraction=1, 
+                    crop_fraction=None, 
                     stk_level=self.stk_level,
                     ))
                 
@@ -171,7 +172,6 @@ class TrainClasses:
         with open(self.train_path / "ncl_cls.pkl", "wb") as file:
             pickle.dump(ncl_cls, file)
         crp_nrm = np.concatenate(crp_nrm, axis=0)
-        print(crp_nrm.shape)
         save_compressed_stack(crp_nrm, self.train_path / "crp_nrm.npz")
                 
 #%% Class(TrainClasses) : train() ---------------------------------------------
@@ -189,10 +189,7 @@ class TrainClasses:
         
         # Prepare data
         ncl_cls = ncl_cls - 1 # class 1 (other) = 0
-        crp_nrm = crp_nrm[:, 1:, ...]  # remove dapi channel
-        crp_nrm = crp_nrm[:, :-1, ...] # remove autofluo channel
-        crp_nrm = np.transpose(crp_nrm, (0, 2, 3, 1)) # transposition
-        crp_nrm = crp_nrm.astype("float32") / 255 # normalize
+        crp_nrm = prepare_crops(crp_nrm)
         
         self.y = ncl_cls
         self.X = crp_nrm
@@ -210,71 +207,85 @@ if __name__ == "__main__":
     train = TrainClasses(
         main, parameters=parameters, model_parameters=model_parameters)
     
-#%% 
-    # y = train.y
-    # X = train.X
-    # _, count = np.unique(y, return_counts=True)
-    # cmin = np.min(count)
-     
-    # bX_trn, by_trn = [], []
-    # for c in range(train.model.n_classes):
-    #     idxs = np.random.choice(np.argwhere(y == c).squeeze(), size=cmin)
-    #     bX_trn.append(X[idxs])
-    #     by_trn.append(y[idxs])
-    # bX_trn = np.concatenate(bX_trn, axis=0)
-    # by_trn = np.concatenate(by_trn, axis=0)
-    
-#%% Crops ---------------------------------------------------------------------
-    
-    # # Paths
-    # ncl_cls_path = parameters["train_path"] / "ncl_cls.pkl" 
-    # crp_nrm_path = parameters["train_path"] / "crp_nrm.npz"    
-    
-    # # Load data
-    # with open(ncl_cls_path, "rb") as file:
-    #     ncl_cls = pickle.load(file)    
-    # crp_nrm = load_compressed_stack(crp_nrm_path)
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(np.stack(crp_nrm))
-        
-#%% Predict
-    
-    # # Parameters
-    # subset = 0.01
-    # model_name = "model_32_2_512_59273"
+#%% Predict -------------------------------------------------------------------
 
-    # # Paths
-    # crp_nrm_path = main.data_path / "crops_raw.npz"
+    # Paths
+    vws_idx = 15
+    vws_path = main.vws_paths[vws_idx]
+    stk_nrm_path = vws_path / "stack_norm.npz" 
+    ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
     
-    # # Load model
-    # model = AutoEncoder(
-    #     parameters=None, 
-    #     model_path=Path.cwd() / model_name
-    #     )
+    # Load model
+    model_path = Path(Path.cwd(), "model-cls_12_2_6_5045-8190b")
+    model = Model(parameters=None, model_path=model_path)
     
-    # # Load data
-    # crp_nrm = load_compressed_stack(crp_nrm_path)
-    # crp_num = crp_nrm.shape[0]   
+    # Load data
+    with open(ncl_ctd_path, "rb") as file:
+        ncl_ctd = pickle.load(file)   
+    stk_nrm = load_compressed_stack(stk_nrm_path)
     
-    # # Select data
-    # idxs = np.random.choice(
-    #     np.arange(0, crp_num), size=int(crp_num * subset), replace=False)
-    # X = crp_nrm[idxs][:, :7, ...]
-    # X = np.transpose(X, (0, 2, 3, 1)) # transposition
+    # Get crops
+    crp_nrm = get_crops(
+        stk_nrm, ncl_ctd, 
+        crop_size=parameters["crop_size"],
+        stk_level=parameters["stk_level"],
+        )
+    crp_nrm = prepare_crops(crp_nrm)
+        
+    # Predict
+    prds = model.predict(crp_nrm)  
+    prds = np.argmax(prds, axis=1)
+    prds += 1
+
+#%% Display -------------------------------------------------------------------
     
-    # # Normalize data
-    # X = X.astype("float32") / 255
+    import napari
     
-    # # Predict
-    # prd = model.predict(X)
-    # prd = np.transpose(prd, (0, 3, 1, 2))
-    # X = np.transpose(X, (0, 3, 1, 2))
+    # Maps
     
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(X)
-    # vwr.add_image(prd)
+    colors = [
+        "gray", "yellow", "green",
+        "red", "orange",
+        "cyan", "magenta",
+        ]
+    
+    names = [
+        "NaN", "Other", "Epithelium",
+        "Neutrophil", "Macrophage", 
+        "B cell", "T cell", 
+        ]
+    
+    class_map = {
+        "cls_nan" : {"tag" : 0, "color" : colors[0], "name" : names[0]},
+        "cls_oth" : {"tag" : 1, "color" : colors[1], "name" : names[1]},
+        "cls_epi" : {"tag" : 2, "color" : colors[2], "name" : names[2]},
+        "cls_neu" : {"tag" : 3, "color" : colors[3], "name" : names[3]},
+        "cls_mac" : {"tag" : 4, "color" : colors[4], "name" : names[4]},
+        "cls_bcl" : {"tag" : 5, "color" : colors[5], "name" : names[5]},
+        "cls_tcl" : {"tag" : 6, "color" : colors[6], "name" : names[6]},
+        }
+    
+    color_map = {
+        v["tag"]: v["color"] for v in class_map.values()}
+    
+    ncl_ctd = np.column_stack((
+        ncl_ctd["y"][parameters["stk_level"]],
+        ncl_ctd["x"][parameters["stk_level"]],
+        ))
+    
+    # -------------------------------------------------------------------------    
+    
+    vwr = napari.Viewer()
+    vwr.add_image(
+        stk_nrm, name="stk_nrm", visible=1,
+        gamma=0.75, 
+        )
+            
+    vwr.add_points(
+        ncl_ctd, name="points", visible=1,
+        blending="translucent", size=5, border_width=0.0,
+        features={"class_label": prds},
+        face_color="class_label",
+        face_color_cycle=color_map,
+        opacity=0.5, 
+        )
