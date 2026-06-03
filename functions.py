@@ -14,6 +14,9 @@ from skimage.segmentation import watershed
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
+
+# scipy
+from scipy import signal
         
 #%% function(s) : normalization -----------------------------------------------
 
@@ -209,9 +212,9 @@ def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
                 
     return np.stack(arr).squeeze()
 
-#%% function(s) : get_intensities() -------------------------------------------
+#%% function(s) : get_preview_intensities() -----------------------------------
 
-def get_intensities(pvw, msk):
+def get_preview_intensities(pvw, msk):
     msk = msk > 0
     its = {"avg" : [], "med" : [], "std" : [], "qtl" : []}
     avg, med, std, qtl = [], [], [], []
@@ -249,6 +252,34 @@ def get_nuclei_centroids(msk, n_levels=5):
         ctd["x"].append(x / 2 ** level) 
     return ctd
 
+def get_nuclei_intensities(crp):
+    
+    # Initialize
+    crop_size = crp.shape[-1]
+    
+    # Create Gaussian kernel
+    kernel = signal.windows.gaussian(crop_size, std=8)
+    kernel = np.outer(kernel, kernel)
+    kernel /= np.sum(kernel) 
+    kernel = kernel[None, None, :, :]
+    
+    # Measure
+    its = {
+        "avg" : [], "std" : [], "med" : [], "min" : [], "max" : []}
+    for c in range(crp.shape[1]):
+        its["avg"].append(np.mean(
+            crp[:, c, ...], axis=(1, 2)))
+        its["std"].append(np.std(
+            crp[:, c, ...], axis=(1, 2)))
+        its["med"].append(np.median(
+            crp[:, c, ...], axis=(1, 2)))
+        its["min"].append(np.min(
+            crp[:, c, ...], axis=(1, 2)))
+        its["max"].append(np.max(
+            crp[:, c, ...], axis=(1, 2)))
+    
+    return its
+
 #%% function(s) : get_crops() -------------------------------------------------
 
 def get_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
@@ -283,11 +314,11 @@ def get_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
         
     return np.stack(crops)
 
-def prepare_crops(crp_nrm):
-    crp_nrm = np.delete(crp_nrm, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
-    crp_nrm = np.transpose(crp_nrm, (0, 2, 3, 1)) # transposition
-    crp_nrm = crp_nrm.astype("float32") / 255 # normalize
-    return crp_nrm
+def prepare_crops(crp):
+    crp = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
+    crp = np.transpose(crp, (0, 2, 3, 1)) # transposition
+    crp = crp.astype("float32") / 255 # normalize
+    return crp
 
 #%% Execute -------------------------------------------------------------------
 

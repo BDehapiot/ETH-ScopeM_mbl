@@ -9,8 +9,8 @@ from pathlib import Path
 # functions
 from functions import (
     prep_preview, norm_12_to_8bits, norm_data, 
-    get_slide_metadata, load_view, get_intensities,
-    get_nuclei_mask, get_nuclei_centroids,
+    get_slide_metadata, load_view, get_preview_intensities,
+    get_nuclei_mask, get_nuclei_centroids, get_nuclei_intensities,
     save_compressed_stack, load_compressed_stack,
     save_compressed_mask, load_compressed_mask,
     get_crops, prepare_crops,
@@ -23,27 +23,33 @@ from bdtools.model.model import Model
 
 main_parameters = {
     
-    # Channels
-    "channels"  : [
-        "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF"
+    # Maps
+    "channels" : [
+        "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF",
         ],
+    "classes"  : [
+        "Other", "Epithelium", "Neutrophil", "Macrophage", "B cell", "T cell",  
+        ],
+    "measures" : [
+        "avg", "std", "med", "min", "max",
+        ],    
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
     "model_preview_name" : "model-sm_preview_256_binary_227-1024",
     "model_nuclei_name"  : "model-sm_nuclei_256_edt_192-1024",
-    "model_class_name"   : "model-cls_12_2_6_5045-8190b",
+    "model_classes_name" : "model-cls_12_2_6_5045-8190b",
     
     # extract()
     "pvw_level" : 4,
     "stk_level" : 1,
         
-    # predict()
+    # predict_nuclei()
     "thresh_0"  : 0.25,
-    "thresh_1"  : 0.50,
+    "thresh_1"  : 0.50,    
     
     # Measure()
-    # "crop_size" : 32,
+    "crop_size" : 32,
 
     }
 
@@ -58,8 +64,9 @@ class Main:
         
         # Run
         self.extract()
-        self.predict()
-        # self.measure()
+        self.predict_nuclei()
+        self.predict_classes()
+        self.measure()
         
 #%% Class(Main) : extract() ---------------------------------------------------
 
@@ -130,7 +137,7 @@ class Main:
                     pvw_msk = (pvw_msk * 255).astype("uint8")
                     
                     # Intensities
-                    pvw_its = get_intensities(pvw_raw, pvw_msk)
+                    pvw_its = get_preview_intensities(pvw_raw, pvw_msk)
                     
                     # Preview norm.
                     pvw_nrm = (norm_data(pvw_raw, pvw_its) * 255).astype("uint8")
@@ -154,9 +161,9 @@ class Main:
                     with open(pvw_its_path, "wb") as file:
                         pickle.dump(pvw_its, file)        
                             
-#%% Class(Main) : predict() ---------------------------------------------------
+#%% Class(Main) : predict_nuclei() --------------------------------------------
                    
-    def predict(self):
+    def predict_nuclei(self):
         
         for p, vws_path in enumerate(self.vws_paths):
 
@@ -164,108 +171,139 @@ class Main:
             qpt_path = self.qpt_paths[p]
             mtd_path = self.mtd_paths[p]
             pvw_its_path = vws_path / "preview_intensities.pkl"
-            stk_nrm_path = vws_path / "stack_norm.npz"
             ncl_msk_path = vws_path / "nuclei_mask.npz"
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
             roi_idx = int(vws_path.stem[-2:])
             
-            # if not ncl_msk_path.exists():
+            if not ncl_msk_path.exists():
                 
-            # Model
-            if "model_nuclei" not in locals():
-                model_nuclei = Model(
-                    parameters=None, 
-                    model_path=Path.cwd() / self.model_nuclei_name
-                    )
-            
-            if "model_classes" not in locals():
-                model_classes = Model(
-                    parameters=None, 
-                    model_path=Path.cwd() / self.model_nuclei_name
-                    )
-            
-            print(f"Main() : predict() : {vws_path.name}")
-            
-            # Load
-            with open(mtd_path, "rb") as file:
-                mtd = pickle.load(file)
-            with open(pvw_its_path, "rb") as file:
-                pvw_its = pickle.load(file)
-            ncl = load_view(
-                qpt_path, metadata=mtd, channels="DAPI", 
-                level=0, roi_idx=roi_idx,
-                )
-            stk_nrm = load_compressed_stack(stk_nrm_path)
-                               
-            # Nuclei prediction
-            ncl_prd = model_nuclei.predict(
-                norm_data(ncl, pvw_its, channel_idx=0), 
-                patch_overlap=32, batch_size=64, chunk_size=5000, 
-                )
-
-            # Nuclei mask
-            ncl_msk = get_nuclei_mask(
-                ncl_prd, thresh_0=self.thresh_0, thresh_1=self.thresh_1)
-
-            # Nuclei centroids                    
-            ncl_ctd = get_nuclei_centroids(
-                ncl_msk, n_levels=len(mtd["level"]))
-            
-            # Save #1
-            save_compressed_mask(ncl_msk, ncl_msk_path)
-            with open(ncl_ctd_path, "wb") as file:
-                pickle.dump(ncl_ctd, file)
-
-            # Clear #1
-            del ncl, ncl_prd, ncl_msk
-            tf.keras.backend.clear_session()
-            gc.collect()
-                                         
-            # Nuclei class prediction
-            crp_nrm = get_crops(
-                stk_nrm, ncl_ctd, crop_size=12, stk_level=self.stk_level)
-            crp_nrm = prepare_crops(crp_nrm)
-            ncl_cls = model_classes.predict(crp_nrm)
-            
-            # Save #2
-            with open(ncl_cls_path, "wb") as file:
-                pickle.dump(ncl_cls, file)
-            
-            # Clear #2
-            del stk_nrm, crp_nrm, ncl_cls
-            tf.keras.backend.clear_session()
-            gc.collect()
+                # Model
+                if "model_nuclei" not in locals():
+                    model_nuclei = Model(
+                        parameters=None, 
+                        model_path=Path.cwd() / self.model_nuclei_name
+                        )
                 
+                print(f"Main() : predict_nuclei() : {vws_path.name}")
+                
+                # Load
+                with open(mtd_path, "rb") as file:
+                    mtd = pickle.load(file)
+                with open(pvw_its_path, "rb") as file:
+                    pvw_its = pickle.load(file)
+                ncl = load_view(
+                    qpt_path, metadata=mtd, channels="DAPI", 
+                    level=0, roi_idx=roi_idx,
+                    )
+                                   
+                # Nuclei prediction
+                ncl_prd = model_nuclei.predict(
+                    norm_data(ncl, pvw_its, channel_idx=0), 
+                    patch_overlap=32, batch_size=64, chunk_size=5000, 
+                    )
+    
+                # Nuclei mask
+                ncl_msk = get_nuclei_mask(
+                    ncl_prd, thresh_0=self.thresh_0, thresh_1=self.thresh_1)
+    
+                # Nuclei centroids                    
+                ncl_ctd = get_nuclei_centroids(
+                    ncl_msk, n_levels=len(mtd["level"]))
+                
+                # Save
+                save_compressed_mask(ncl_msk, ncl_msk_path)
+                with open(ncl_ctd_path, "wb") as file:
+                    pickle.dump(ncl_ctd, file)
+    
+                # Clear
+                del ncl, ncl_prd, ncl_msk
+                tf.keras.backend.clear_session()
+                gc.collect()
+                                                         
+#%% Class(Main) : predict_classes() -------------------------------------------
+            
+    def predict_classes(self):
+        
+        for p, vws_path in enumerate(self.vws_paths):
+            
+            # Paths
+            stk_nrm_path = vws_path / "stack_norm.npz"
+            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+            ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
+            
+            if not ncl_cls_path.exists():
+            
+                # Model
+                if "model_classes" not in locals():
+                    model_classes = Model(
+                        parameters=None, 
+                        model_path=Path.cwd() / self.model_classes_name
+                        )
+                    
+                print(f"Main() : predict_classes() : {vws_path.name}")
+                    
+                # Load
+                with open(ncl_ctd_path, "rb") as file:
+                    ncl_ctd = pickle.load(file)
+                stk_nrm = load_compressed_stack(stk_nrm_path)
+                    
+                # Get crops
+                crop_size = int(self.model_classes_name.split("_")[1])
+                crp_nrm = get_crops(
+                    stk_nrm, ncl_ctd, 
+                    crop_size=crop_size, 
+                    stk_level=self.stk_level
+                    )
+                
+                # Predict nuclei classes
+                crp_nrm = prepare_crops(crp_nrm)
+                ncl_cls = model_classes.predict(crp_nrm)
+                
+                # Save
+                with open(ncl_cls_path, "wb") as file:
+                    pickle.dump(ncl_cls, file)
+                    
+                # Clear
+                del stk_nrm, ncl_ctd, crp_nrm, ncl_cls
+                tf.keras.backend.clear_session()
+                gc.collect()
+
 #%% Class(Main) : measure() ---------------------------------------------------
 
-    # def measure(self):
-        
-    #     for p, vws_path in enumerate(self.vws_paths):
-
-    #         # Paths
-    #         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-    #         stk_nrm_path = vws_path / "stack_norm.npz"            
-
-    #         if p == 0:            
-
-    #             print(f"Main() : measure() : {vws_path.name}")                
-
-    #             # Load
-    #             with open(ncl_ctd_path, "rb") as file:
-    #                 ncl_ctd = pickle.load(file)
-    #             stk_nrm = load_compressed_stack(stk_nrm_path)
+    def measure(self):
                 
-    #             # Get crops
-    #             crp_nrm = get_crops(
-    #                 stk_nrm, ncl_ctd, 
-    #                 crop_size=self.crop_size, 
-    #                 crop_fraction=1, 
-    #                 stk_level=self.stk_level,
-    #                 )
-    #             self.crp_nrm = crp_nrm
-                
+        for p, vws_path in enumerate(self.vws_paths):
 
+            # Paths
+            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+            ncl_its_path = vws_path / "nuclei_intensities.pkl"
+            stk_nrm_path = vws_path / "stack_norm.npz"     
+
+            if not ncl_its_path.exists():           
+
+                print(f"Main() : measure() : {vws_path.name}")                
+
+                # Load
+                with open(ncl_ctd_path, "rb") as file:
+                    ncl_ctd = pickle.load(file)
+                stk_nrm = load_compressed_stack(stk_nrm_path)
+                
+                # Get crops
+                crp_nrm = get_crops(
+                    stk_nrm, ncl_ctd, 
+                    crop_size=self.crop_size, 
+                    crop_fraction=1, 
+                    stk_level=self.stk_level,
+                    )
+                crp_nrm = crp_nrm.astype("float32") / 255 # normalize
+                
+                # Get nuclei intensities
+                ncl_its = get_nuclei_intensities(crp_nrm)
+                    
+                # Save
+                with open(ncl_its_path, "wb") as file:
+                    pickle.dump(ncl_its, file)
+                
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -273,40 +311,65 @@ if __name__ == "__main__":
     
 #%% 
 
-    # # Imports
-    # import numpy as np
-    # from scipy import signal
+    # Imports
+    import numpy as np
 
-    # # Parameters
-    # channel = 0
-    
-    # # Initialize
-    # crp_nrm = main.crp_nrm
-    # crp_nrm = crp_nrm.astype("float32") / 255
-    
-    # # Create Gaussian kernel
-    # kernel = signal.windows.gaussian(32, std=8)
-    # kernel = np.outer(kernel, kernel)
-    # kernel /= np.sum(kernel) 
-    # kernel = kernel[None, None, :, :]
-    
-    # # Apply Gaussian kernel
-    # crp_nrm *= kernel
-    
-    # # Measure
-    # measures = {
-    #     "avg" : [], "std" : [], "med" : [], "min" : [], "max" : []}
-    # for channel in range(crp_nrm.shape[1]):
-    #     measures["avg"].append(np.mean(
-    #         crp_nrm[:, channel, ...], axis=(1, 2)))
-    #     measures["std"].append(np.std(
-    #         crp_nrm[:, channel, ...], axis=(1, 2)))
-    #     measures["med"].append(np.median(
-    #         crp_nrm[:, channel, ...], axis=(1, 2)))
-    #     measures["min"].append(np.min(
-    #         crp_nrm[:, channel, ...], axis=(1, 2)))
-    #     measures["max"].append(np.max(
-    #         crp_nrm[:, channel, ...], axis=(1, 2)))
+    # Paths
+    vws_paths = main.vws_paths
+
+    all_vws, all_cls, all_its = [], [], []
+    for p, vws_path in enumerate(vws_paths):
         
-    # # Plot
+        # Paths
+        ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
+        ncl_its_path = vws_path / "nuclei_intensities.pkl"
+        
+        # Load data
+        with open(ncl_cls_path, "rb") as file:
+            ncl_cls = pickle.load(file)
+        ncl_cls = np.argmax(ncl_cls, axis=1)
+        with open(ncl_its_path, "rb") as file:
+            ncl_its = pickle.load(file)
     
+        # Append
+        all_vws.append(vws_path.name)
+        all_cls.append(ncl_cls)
+        all_its.append(ncl_its)
+    
+    all_vws = np.concatenate(all_vws, axis=0)
+    all_cls = np.concatenate(all_cls, axis=0)
+        
+#%% 
+    
+    # Imports
+    import numpy as np
+    import pandas as pd
+
+    def get_data(all_vws, all_cls, all_its, channels, classes, measures):
+        
+        # Initialize
+        classes = np.array(classes)
+        all_cls = classes[all_cls]
+        
+        # Extract
+        data = []
+        
+        for m, measure in enumerate(measures):
+            mdata = [d[measure] for d in all_its]
+            for c, chn in enumerate(channels):
+                cdata = np.concatenate([d[c] for d in mdata], axis=0)
+                
+               data.append(np.concatenate([d[c] for d in mdata], axis=0))
+            data = np.column_stack(data)
+            data = np.column_stack((all_vws, all_cls, data))
+            df = pd.DataFrame(data)
+            df.columns = ["class", 'Ch_A', 'Ch_B', 'Ch_C']
+
+        return df
+    
+    # get_data()
+    channels, classes, measures = main.channels, main.classes, main.measures 
+    data = get_data(all_cls, all_its, measure=measure, channels=channels)
+    
+    
+

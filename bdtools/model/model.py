@@ -320,7 +320,6 @@ class Model:
                 arr, self.patch_size, patch_overlap, 
                 multichannel=multichannel_in
                 ))
-        
             print(patches.shape)
         
             # Predict

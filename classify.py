@@ -12,9 +12,8 @@ from functions import load_compressed_stack
 # Qt
 from qtpy.QtGui import QFont
 from qtpy.QtWidgets import (
-    QButtonGroup, QGroupBox, QHBoxLayout, QVBoxLayout,
-    QPushButton, QRadioButton,
-    QWidget, QLabel,
+    QGroupBox, QHBoxLayout, QVBoxLayout,
+    QPushButton, QWidget, QLabel,
     )
 
 #%% Inputs --------------------------------------------------------------------
@@ -24,19 +23,17 @@ classify_parameters = {
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
     
-    # Classify
-    
-    "names" : [
-        "NaN", "Other", "Epithelium",
-        "Neutrophil", "Macrophage", 
-        "B cell", "T cell",        
-        ],
+    # Maps
     
     "colors" : [
-        "gray", "yellow", "green",
-        "red", "orange",
-        "cyan", "magenta",
-        ]
+        [0.2, 0.2, 0.2], # NaNs
+        [0.5, 0.5, 0.5], # Other
+        [0.0, 1.0, 0.0], # Epithelium
+        [1.0, 0.0, 0.0], # Neutrophil
+        [1.0, 0.0, 1.0], # Macrophage
+        [0.0, 1.0, 1.0], # Bcell
+        [1.0, 1.0, 0.0], # Tcell
+        ],
     
     }
 
@@ -68,14 +65,15 @@ class Classify:
         self.vws_paths = self.main.vws_paths
         
         # Maps
+        self.classes.insert(0, "NaN")
         self.class_map = {
-            "cls_nan" : {"tag" : 0, "color" : self.colors[0], "name" : self.names[0]},
-            "cls_oth" : {"tag" : 1, "color" : self.colors[1], "name" : self.names[1]},
-            "cls_epi" : {"tag" : 2, "color" : self.colors[2], "name" : self.names[2]},
-            "cls_neu" : {"tag" : 3, "color" : self.colors[3], "name" : self.names[3]},
-            "cls_mac" : {"tag" : 4, "color" : self.colors[4], "name" : self.names[4]},
-            "cls_bcl" : {"tag" : 5, "color" : self.colors[5], "name" : self.names[5]},
-            "cls_tcl" : {"tag" : 6, "color" : self.colors[6], "name" : self.names[6]},
+            "cls_nan" : {"tag" : 0, "color" : self.colors[0], "class" : self.classes[0]},
+            "cls_oth" : {"tag" : 1, "color" : self.colors[1], "class" : self.classes[1]},
+            "cls_epi" : {"tag" : 2, "color" : self.colors[2], "class" : self.classes[2]},
+            "cls_neu" : {"tag" : 3, "color" : self.colors[3], "class" : self.classes[3]},
+            "cls_mac" : {"tag" : 4, "color" : self.colors[4], "class" : self.classes[4]},
+            "cls_bcl" : {"tag" : 5, "color" : self.colors[5], "class" : self.classes[5]},
+            "cls_tcl" : {"tag" : 6, "color" : self.colors[6], "class" : self.classes[6]},
             }
         self.color_map = {
             v["tag"]: v["color"] for v in self.class_map.values()}
@@ -175,7 +173,7 @@ class Classify:
         self.cls_group_box = QGroupBox("Classify")
         self.cls_group_layout = QVBoxLayout()
         for key, val in self.class_map.items():
-            setattr(self, key, QPushButton(val["name"]))
+            setattr(self, key, QPushButton(val["class"]))
             self.cls_group_layout.addWidget(getattr(self, key))
         self.cls_group_box.setLayout(self.cls_group_layout)
         
@@ -242,7 +240,7 @@ class Classify:
         classify_str = []
         for key, val in self.class_map.items():    
             classify_str.append(
-                f"{val['name']} : {np.sum(self.ncl_cls == val['tag'])}\n"
+                f"{val['class']} : {np.sum(self.ncl_cls == val['tag'])}\n"
                 )
         
         self.info.setText(
