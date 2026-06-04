@@ -1,7 +1,9 @@
 #%% Imports -------------------------------------------------------------------
 
 import gc
+import time
 import pickle
+import numpy as np
 from skimage import io
 import tensorflow as tf
 from pathlib import Path
@@ -9,8 +11,8 @@ from pathlib import Path
 # functions
 from functions import (
     prep_preview, norm_12_to_8bits, norm_data, 
-    get_slide_metadata, load_view, get_preview_intensities,
-    get_nuclei_mask, get_nuclei_centroids, get_nuclei_intensities,
+    get_slide_metadata, load_view, get_preview_stats,
+    get_nuclei_mask, get_nuclei_centroids, get_nuclei_stats,
     save_compressed_stack, load_compressed_stack,
     save_compressed_mask, load_compressed_mask,
     get_crops, prepare_crops,
@@ -18,6 +20,9 @@ from functions import (
 
 # bdtools
 from bdtools.model.model import Model
+
+# scipy
+from scipy.stats import entropy
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -28,11 +33,8 @@ main_parameters = {
         "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF",
         ],
     "classes"  : [
-        "Other", "Epithelium", "Neutrophil", "Macrophage", "B cell", "T cell",  
+        "Other", "Epithelium", "Neutrophil", "Macrophage", "Bcell", "Tcell",  
         ],
-    "measures" : [
-        "avg", "std", "med", "min", "max",
-        ],    
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
@@ -107,11 +109,18 @@ class Main:
                 pvw_raw_path = vws_path / "preview_raw.tif"
                 pvw_msk_path = vws_path / "preview_mask.tif"
                 pvw_nrm_path = vws_path / "preview_norm.tif"
-                pvw_its_path = vws_path / "preview_intensities.pkl"
+                pvw_sts_path = vws_path / "preview_stats.pkl"
                 stk_raw_path = vws_path / "stack_raw.npz"
                 stk_nrm_path = vws_path / "stack_norm.npz"
 
-                if not vws_path.exists():
+                if not stk_nrm_path.exists():
+                    
+                    # Log
+                    t0 = time.time()
+                    log_str = f"Main() : extract() : {vws_path.name}"
+                    print("-" * len(log_str))
+                    print(log_str)
+                    print("-" * len(log_str))
                     
                     # Model
                     if "model_preview" not in locals():
@@ -119,8 +128,6 @@ class Main:
                             parameters=None, 
                             model_path=Path.cwd() / self.model_preview_name
                             )
-                    
-                    print(f"Main() : extract() : {vws_path.name}")
                     
                     vws_path.mkdir(parents=True, exist_ok=True) 
     
@@ -136,11 +143,11 @@ class Main:
                         pvw_prp, batch_size=32) > 0.5
                     pvw_msk = (pvw_msk * 255).astype("uint8")
                     
-                    # Intensities
-                    pvw_its = get_preview_intensities(pvw_raw, pvw_msk)
+                    # Preview stats
+                    pvw_sts = get_preview_stats(pvw_raw, pvw_msk, self.channels)
                     
-                    # Preview norm.
-                    pvw_nrm = (norm_data(pvw_raw, pvw_its) * 255).astype("uint8")
+                    # Preview normalization
+                    pvw_nrm = (norm_data(pvw_raw, pvw_sts) * 255).astype("uint8")
                     
                     # Stack raw
                     stk_raw = load_view(
@@ -149,8 +156,8 @@ class Main:
                         )
                     stk_raw = norm_12_to_8bits(stk_raw)
                     
-                    # Stack norm
-                    stk_nrm = (norm_data(stk_raw, pvw_its) * 255).astype("uint8")
+                    # Stack normalization
+                    stk_nrm = (norm_data(stk_raw, pvw_sts) * 255).astype("uint8")
                     
                     # Save
                     io.imsave(pvw_raw_path, pvw_raw, check_contrast=False)
@@ -158,8 +165,11 @@ class Main:
                     io.imsave(pvw_nrm_path, pvw_nrm, check_contrast=False)
                     save_compressed_stack(stk_raw, stk_raw_path)
                     save_compressed_stack(stk_nrm, stk_nrm_path)
-                    with open(pvw_its_path, "wb") as file:
-                        pickle.dump(pvw_its, file)        
+                    with open(pvw_sts_path, "wb") as file:
+                        pickle.dump(pvw_sts, file)     
+                        
+                    t1 = time.time()
+                    print(f"duration : {t1 - t0:.3f}s")
                             
 #%% Class(Main) : predict_nuclei() --------------------------------------------
                    
@@ -170,12 +180,19 @@ class Main:
             # Paths
             qpt_path = self.qpt_paths[p]
             mtd_path = self.mtd_paths[p]
-            pvw_its_path = vws_path / "preview_intensities.pkl"
+            pvw_sts_path = vws_path / "preview_stats.pkl"
             ncl_msk_path = vws_path / "nuclei_mask.npz"
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
             roi_idx = int(vws_path.stem[-2:])
             
-            if not ncl_msk_path.exists():
+            if not ncl_ctd_path.exists():
+                       
+                # Log
+                t0 = time.time()
+                log_str = f"Main() : predict_nuclei() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))
                 
                 # Model
                 if "model_nuclei" not in locals():
@@ -184,13 +201,11 @@ class Main:
                         model_path=Path.cwd() / self.model_nuclei_name
                         )
                 
-                print(f"Main() : predict_nuclei() : {vws_path.name}")
-                
                 # Load
                 with open(mtd_path, "rb") as file:
                     mtd = pickle.load(file)
-                with open(pvw_its_path, "rb") as file:
-                    pvw_its = pickle.load(file)
+                with open(pvw_sts_path, "rb") as file:
+                    pvw_sts = pickle.load(file)
                 ncl = load_view(
                     qpt_path, metadata=mtd, channels="DAPI", 
                     level=0, roi_idx=roi_idx,
@@ -198,7 +213,7 @@ class Main:
                                    
                 # Nuclei prediction
                 ncl_prd = model_nuclei.predict(
-                    norm_data(ncl, pvw_its, channel_idx=0), 
+                    norm_data(ncl, pvw_sts, channel="DAPI"), 
                     patch_overlap=32, batch_size=64, chunk_size=5000, 
                     )
     
@@ -216,9 +231,12 @@ class Main:
                     pickle.dump(ncl_ctd, file)
     
                 # Clear
-                del ncl, ncl_prd, ncl_msk
+                del ncl, ncl_prd, ncl_msk, ncl_ctd
                 tf.keras.backend.clear_session()
                 gc.collect()
+                
+                t1 = time.time()
+                print(f"duration : {t1 - t0:.3f}s")
                                                          
 #%% Class(Main) : predict_classes() -------------------------------------------
             
@@ -229,9 +247,17 @@ class Main:
             # Paths
             stk_nrm_path = vws_path / "stack_norm.npz"
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
+            ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+            ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
             
-            if not ncl_cls_path.exists():
+            if not ncl_ent_path.exists():
+            
+                # Log
+                t0 = time.time()
+                log_str = f"Main() : predict_classes() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))    
             
                 # Model
                 if "model_classes" not in locals():
@@ -239,8 +265,6 @@ class Main:
                         parameters=None, 
                         model_path=Path.cwd() / self.model_classes_name
                         )
-                    
-                print(f"Main() : predict_classes() : {vws_path.name}")
                     
                 # Load
                 with open(ncl_ctd_path, "rb") as file:
@@ -257,16 +281,23 @@ class Main:
                 
                 # Predict nuclei classes
                 crp_nrm = prepare_crops(crp_nrm)
-                ncl_cls = model_classes.predict(crp_nrm)
-                
+                ncl_prd = model_classes.predict(crp_nrm)
+                ncl_ent = entropy(ncl_prd, axis=1, base=len(self.classes))
+                ncl_prd = np.argmax(ncl_prd, axis=1)
+    
                 # Save
-                with open(ncl_cls_path, "wb") as file:
-                    pickle.dump(ncl_cls, file)
+                with open(ncl_prd_path, "wb") as file:
+                    pickle.dump(ncl_prd, file)
+                with open(ncl_ent_path, "wb") as file:
+                    pickle.dump(ncl_ent, file)
                     
                 # Clear
-                del stk_nrm, ncl_ctd, crp_nrm, ncl_cls
+                del stk_nrm, ncl_ctd, crp_nrm, ncl_prd, ncl_ent
                 tf.keras.backend.clear_session()
                 gc.collect()
+                
+                t1 = time.time()
+                print(f"duration : {t1 - t0:.3f}s")
 
 #%% Class(Main) : measure() ---------------------------------------------------
 
@@ -276,100 +307,115 @@ class Main:
 
             # Paths
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            ncl_its_path = vws_path / "nuclei_intensities.pkl"
+            ncl_sts_path = vws_path / "nuclei_stats.pkl"
             stk_nrm_path = vws_path / "stack_norm.npz"     
 
-            if not ncl_its_path.exists():           
+            # if not ncl_sts_path.exists():           
 
-                print(f"Main() : measure() : {vws_path.name}")                
+            # Log
+            t0 = time.time()
+            log_str = f"Main() : measure() : {vws_path.name}"
+            print("-" * len(log_str))
+            print(log_str)
+            print("-" * len(log_str))                           
 
-                # Load
-                with open(ncl_ctd_path, "rb") as file:
-                    ncl_ctd = pickle.load(file)
-                stk_nrm = load_compressed_stack(stk_nrm_path)
+            # Load
+            with open(ncl_ctd_path, "rb") as file:
+                ncl_ctd = pickle.load(file)
+            stk_nrm = load_compressed_stack(stk_nrm_path)
+            
+            # Get crops
+            crp_nrm = get_crops(
+                stk_nrm, ncl_ctd, 
+                crop_size=self.crop_size, 
+                crop_fraction=None, 
+                stk_level=self.stk_level,
+                )
+            crp_nrm = crp_nrm.astype("float32") / 255 # normalize
+            
+            # Get nuclei stats
+            ncl_sts = get_nuclei_stats(crp_nrm, self.channels)
                 
-                # Get crops
-                crp_nrm = get_crops(
-                    stk_nrm, ncl_ctd, 
-                    crop_size=self.crop_size, 
-                    crop_fraction=1, 
-                    stk_level=self.stk_level,
-                    )
-                crp_nrm = crp_nrm.astype("float32") / 255 # normalize
+            # Save
+            with open(ncl_sts_path, "wb") as file:
+                pickle.dump(ncl_sts, file)
                 
-                # Get nuclei intensities
-                ncl_its = get_nuclei_intensities(crp_nrm)
+            t1 = time.time()
+            print(f"duration : {t1 - t0:.3f}s")
+                
+#%% Class(Main) : analyse() ---------------------------------------------------  
+
+    def analyse(self):
+        
+        for p, vws_path in enumerate(self.vws_paths):
+            
+            # Paths
+            ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+            ncl_sts_path = vws_path / "nuclei_stats.pkl"
+            
+            # Load
+            with open(ncl_prd_path, "rb") as file:
+                ncl_prd = pickle.load(file)
+            with open(ncl_sts_path, "rb") as file:
+                ncl_sts = pickle.load(file)
+                
+        pass              
                     
-                # Save
-                with open(ncl_its_path, "wb") as file:
-                    pickle.dump(ncl_its, file)
-                
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     
 #%% 
-
-    # Imports
-    import numpy as np
-
-    # Paths
-    vws_paths = main.vws_paths
-
-    all_vws, all_cls, all_its = [], [], []
-    for p, vws_path in enumerate(vws_paths):
-        
-        # Paths
-        ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
-        ncl_its_path = vws_path / "nuclei_intensities.pkl"
-        
-        # Load data
-        with open(ncl_cls_path, "rb") as file:
-            ncl_cls = pickle.load(file)
-        ncl_cls = np.argmax(ncl_cls, axis=1)
-        with open(ncl_its_path, "rb") as file:
-            ncl_its = pickle.load(file)
-    
-        # Append
-        all_vws.append(vws_path.name)
-        all_cls.append(ncl_cls)
-        all_its.append(ncl_its)
-    
-    all_vws = np.concatenate(all_vws, axis=0)
-    all_cls = np.concatenate(all_cls, axis=0)
-        
-#%% 
     
     # Imports
-    import numpy as np
     import pandas as pd
 
-    def get_data(all_vws, all_cls, all_its, channels, classes, measures):
-        
-        # Initialize
-        classes = np.array(classes)
-        all_cls = classes[all_cls]
-        
-        # Extract
-        data = []
-        
-        for m, measure in enumerate(measures):
-            mdata = [d[measure] for d in all_its]
-            for c, chn in enumerate(channels):
-                cdata = np.concatenate([d[c] for d in mdata], axis=0)
-                
-               data.append(np.concatenate([d[c] for d in mdata], axis=0))
-            data = np.column_stack(data)
-            data = np.column_stack((all_vws, all_cls, data))
-            df = pd.DataFrame(data)
-            df.columns = ["class", 'Ch_A', 'Ch_B', 'Ch_C']
+    # -------------------------------------------------------------------------
 
-        return df
-    
-    # get_data()
-    channels, classes, measures = main.channels, main.classes, main.measures 
-    data = get_data(all_cls, all_its, measure=measure, channels=channels)
-    
-    
+    def format_preview_results(pvw_sts, ):
+        pass
 
+    def format_nuclei_results(ncl_prd, ncl_sts, ):
+        pass
+    
+    # -------------------------------------------------------------------------
+
+    # Initialize
+    vws_idx = 0
+    vws_path = main.vws_paths[vws_idx]
+    channels = main.channels
+    classes = main.classes
+    crop_size = main.crop_size
+    stk_level = main.stk_level
+    
+    # -------------------------------------------------------------------------
+
+    # Paths
+    ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+    ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
+    ncl_sts_path = vws_path / "nuclei_stats.pkl"
+    
+    # Load
+    with open(ncl_prd_path, "rb") as file:
+        ncl_prd = pickle.load(file)
+    with open(ncl_ent_path, "rb") as file:
+        ncl_ent = pickle.load(file)
+    with open(ncl_sts_path, "rb") as file:
+        ncl_sts = pickle.load(file)
+        
+    # -------------------------------------------------------------------------
+    
+    ncl_df = pd.DataFrame()
+    n_nuclei = ncl_prd.shape[0]
+    ncl_df["vws"    ] = [vws_path.name] * n_nuclei
+    ncl_df["idx"    ] = np.arange(n_nuclei)
+    ncl_df["class"  ] = np.array(classes)[ncl_prd]
+    ncl_df["entropy"] = ncl_ent
+    for msr in ["avg", "std"]:
+        for chn in channels:
+            key = f"{chn}_{msr}"
+            ncl_df[key] = ncl_sts[msr][chn]
+    ncl_df_avg = ncl_df.groupby("class").mean(numeric_only=True)
+
+    

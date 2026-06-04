@@ -14,57 +14,8 @@ from skimage.segmentation import watershed
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
-
-# scipy
-from scipy import signal
-        
-#%% function(s) : normalization -----------------------------------------------
-
-def norm_12_to_8bits(arr):
-    if arr.ndim == 2:
-        return ((arr + 8) / 16).astype("uint8")
-    elif arr.ndim == 3:
-        for i, img in enumerate(arr):
-            arr[i] = ((img + 8) / 16)
-        return arr.astype("uint8")
-            
-def norm_pct_8bits(arr):
-    if arr.ndim == 2:
-        return (norm_pct(arr) * 255).astype("uint8")
-    elif arr.ndim == 3:
-        for i, img in enumerate(arr):
-            arr[i] = (norm_pct(img) * 255).astype("uint8")
-        return arr   
-    
-def prep_preview(pvw, channels=[2, 5, 6]):
-    return np.mean(
-        norm_pct(pvw)[channels, ...], axis=0).astype("float32") 
-
-def norm_data(arr, its, channel_idx=None):
-    
-    if arr.ndim == 2 and channel_idx is None:
-        raise ValueError("please provide 'channel_idx' as int for 2D ndarray")   
-    
-    arr = arr.astype("float32")
-    
-    if arr.ndim == 2:
-        avg = its["avg"][channel_idx]
-        std = its["std"][channel_idx]
-        arr -= avg
-        arr /= std
-        arr = norm_pct(arr)
-        
-    elif arr.ndim == 3:
-        for channel_idx in range(arr.shape[0]):
-            avg = its["avg"][channel_idx]
-            std = its["std"][channel_idx]
-            arr[channel_idx] -= avg
-            arr[channel_idx] /= std
-            arr[channel_idx] = norm_pct(arr[channel_idx])
-    
-    return arr
-
-#%% function(s) : save compressed ---------------------------------------------
+       
+#%% function(s) : compression -------------------------------------------------
 
 def save_compressed_mask(arr, path):
     arr_bin = np.packbits(arr > 0)        
@@ -83,6 +34,53 @@ def save_compressed_stack(arr, path):
 def load_compressed_stack(path):
     with np.load(path) as loader:
         return loader["data"]
+
+#%% function(s) : normalization -----------------------------------------------
+
+def norm_12_to_8bits(arr):
+    if arr.ndim == 2:
+        return ((arr + 8) / 16).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = ((img + 8) / 16)
+        return arr.astype("uint8")
+            
+def norm_pct_8bits(arr):
+    if arr.ndim == 2:
+        return (norm_pct(arr) * 255).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = (norm_pct(img) * 255).astype("uint8")
+        return arr   
+    
+def prep_preview(pvw_raw, channels=[2, 5, 6]):
+    return np.mean(
+        norm_pct(pvw_raw)[channels, ...], axis=0).astype("float32") 
+
+def norm_data(arr, pvw_sts, channel=None):
+    
+    if arr.ndim == 2 and channel is None:
+        raise ValueError("please provide 'channel' as str for 2D ndarray")   
+    
+    arr = arr.astype("float32")
+    
+    if arr.ndim == 2:
+        avg = pvw_sts["avg"][channel]
+        std = pvw_sts["std"][channel]
+        arr -= avg
+        arr /= std
+        arr = norm_pct(arr)
+        
+    elif arr.ndim == 3:
+        channels = list(pvw_sts["avg"])
+        for c, chn in enumerate(channels):
+            avg = pvw_sts["avg"][chn]
+            std = pvw_sts["std"][chn]
+            arr[c] -= avg
+            arr[c] /= std
+            arr[c] = norm_pct(arr[c])
+    
+    return arr
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -212,39 +210,20 @@ def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
                 
     return np.stack(arr).squeeze()
 
-#%% function(s) : get_preview_intensities() -----------------------------------
-
-def get_preview_intensities(pvw, msk):
-    msk = msk > 0
-    its = {"avg" : [], "med" : [], "std" : [], "qtl" : []}
-    avg, med, std, qtl = [], [], [], []
-    for channel in range(pvw.shape[0]):
-        qt = []
-        avg.append(np.mean(pvw[channel][msk]))
-        med.append(np.median(pvw[channel][msk]))
-        std.append(np.std(pvw[channel][msk]))            
-        for q in np.arange(0.1, 1.0, 0.1):
-            qt.append(np.quantile(pvw[channel][msk], q))
-        qtl.append(qt)
-    its["avg"] = np.stack(avg)
-    its["med"] = np.stack(med)
-    its["std"] = np.stack(std)
-    its["qtl"] = np.stack(qtl)
-    return its
-
-#%% function(s) : nuclei ------------------------------------------------------
     
-def get_nuclei_mask(prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
-    msk_0 = prd > thresh_0
-    msk_1 = prd > thresh_1
-    msk = watershed(-prd, label(msk_1), mask=msk_0)
+#%% function(s) : nuclei segmentation -----------------------------------------
+    
+def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
+    msk_0 = ncl_prd > thresh_0
+    msk_1 = ncl_prd > thresh_1
+    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
     msk[lbl_conn(msk, conn=2) == 2] = 0
     msk = remove_small_objects(
         msk, min_size=0.5 * (2 ** prc_level) ** 2)
     return msk > 0
 
-def get_nuclei_centroids(msk, n_levels=5):
-    props = regionprops_table(label(msk), properties=("label", "centroid"))
+def get_nuclei_centroids(ncl_msk, n_levels=5):
+    props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
     y, x = props["centroid-0"], props["centroid-1"]
     ctd = {"y" : [], "x" : []}
     for level in range(n_levels):
@@ -252,37 +231,26 @@ def get_nuclei_centroids(msk, n_levels=5):
         ctd["x"].append(x / 2 ** level) 
     return ctd
 
-def get_nuclei_intensities(crp):
-    
-    # Initialize
-    crop_size = crp.shape[-1]
-    
-    # Create Gaussian kernel
-    kernel = signal.windows.gaussian(crop_size, std=8)
-    kernel = np.outer(kernel, kernel)
-    kernel /= np.sum(kernel) 
-    kernel = kernel[None, None, :, :]
-    
-    # Measure
-    its = {
-        "avg" : [], "std" : [], "med" : [], "min" : [], "max" : []}
-    for c in range(crp.shape[1]):
-        its["avg"].append(np.mean(
-            crp[:, c, ...], axis=(1, 2)))
-        its["std"].append(np.std(
-            crp[:, c, ...], axis=(1, 2)))
-        its["med"].append(np.median(
-            crp[:, c, ...], axis=(1, 2)))
-        its["min"].append(np.min(
-            crp[:, c, ...], axis=(1, 2)))
-        its["max"].append(np.max(
-            crp[:, c, ...], axis=(1, 2)))
-    
-    return its
+#%% function(s) : statistics --------------------------------------------------
 
-#%% function(s) : get_crops() -------------------------------------------------
+def get_preview_stats(pvw_raw, pvw_msk, channels):
+    pvw_msk = pvw_msk > 0
+    pvw_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+    return pvw_sts
 
-def get_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
+def get_nuclei_stats(crp, channels):        
+    ncl_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
+        ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
+    return ncl_sts
+
+#%% function(s) : crops -------------------------------------------------------
+
+def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
     
     # Pad (acc. to crop half size)
     chs = crop_size // 2 # crop half size
@@ -290,8 +258,8 @@ def get_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
 
     # Extract coordinates
-    ys = ctd["y"][stk_level].astype(int)
-    xs = ctd["x"][stk_level].astype(int)
+    ys = ncl_ctd["y"][stk_level].astype(int)
+    xs = ncl_ctd["x"][stk_level].astype(int)
     
     # Select random coordinates
     if crop_fraction is not None:
@@ -354,7 +322,7 @@ if __name__ == "__main__":
     path = data_path / file_name
     channels = "all"
     level = 4
-    view_idx = 0
+    roi_idx = 0
     
     # -------------------------------------------------------------------------
             
@@ -370,7 +338,7 @@ if __name__ == "__main__":
     print("load_view() : ", end="", flush=True)
     vws = load_view(
         path, metadata=mtd, 
-        channels=channels, level=level, view_idx=view_idx
+        channels=channels, level=level, roi_idx=roi_idx,
         )
     t1 = time.time()
     print(f"{t1 - t0:.3f}s")

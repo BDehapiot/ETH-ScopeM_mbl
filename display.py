@@ -25,12 +25,12 @@ display_parameters = {
     # Maps
         
     "colors" : [
-        [0.5, 0.5, 0.5], # Other
+        [0.0, 0.0, 1.0], # Other
         [0.0, 1.0, 0.0], # Epithelium
         [1.0, 0.0, 0.0], # Neutrophil
         [1.0, 0.0, 1.0], # Macrophage
         [0.0, 1.0, 1.0], # Bcell
-        [1.0, 1.0, 0.0], # Tcell
+        [1.0, 0.0, 0.0], # Tcell
         ],
 
     }
@@ -87,25 +87,24 @@ class Display:
         # Paths
         mtd_path = self.mtd_paths[self.vws_idx]
         vws_path = self.vws_paths[self.vws_idx]
-        pvw_its_path = vws_path / "preview_intensities.pkl"
+        pvw_sts_path = vws_path / "preview_stats.pkl"
         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-        ncl_cls_path = vws_path / "nuclei_classes_predict.pkl"
+        ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
         stk_nrm_path = vws_path / "stack_norm.npz"
         
         # Load
         with open(mtd_path, "rb") as file:
             self.mtd = pickle.load(file)
-        with open(pvw_its_path, "rb") as file:
-            self.pvw_its = pickle.load(file)
+        with open(pvw_sts_path, "rb") as file:
+            self.pvw_sts = pickle.load(file)
         with open(ncl_ctd_path, "rb") as file:
             self.ncl_ctd = pickle.load(file)
             self.ncl_ctd = np.column_stack((
                 self.ncl_ctd["y"][self.stk_level],
                 self.ncl_ctd["x"][self.stk_level],
                 ))
-        with open(ncl_cls_path, "rb") as file:
-            self.ncl_cls = pickle.load(file)
-        self.ncl_cls = np.argmax(self.ncl_cls, axis=1)
+        with open(ncl_prd_path, "rb") as file:
+            self.ncl_prd = pickle.load(file)
         self.stk_nrm = load_compressed_stack(stk_nrm_path)
 
     def auto_contrast(self):
@@ -118,7 +117,7 @@ class Display:
         self.load_data()
         self.vwr.layers["stk_nrm"].data = self.stk_nrm[self.chn_idx]
         self.vwr.layers["ncl_ctd"].data = self.ncl_ctd
-        self.vwr.layers["ncl_ctd"].features = {"class_label": self.ncl_cls}
+        self.vwr.layers["ncl_ctd"].features = {"class_label": self.ncl_prd}
         self.update_class()
         self.auto_contrast()
     
@@ -131,7 +130,7 @@ class Display:
     def update_class(self):
         self.cll = [btn.text() for btn in self.cls_group.buttons() if btn.isChecked()]
         self.cls_idx = [self.classes.index(c) for c in self.cll]
-        self.ncl_msk = np.isin(self.ncl_cls, self.cls_idx)
+        self.ncl_msk = np.isin(self.ncl_prd, self.cls_idx)
         self.vwr.layers["ncl_ctd"].shown = self.ncl_msk
 
     # Buttons -----------------------------------------------------------------
@@ -220,7 +219,7 @@ class Display:
         self.vwr.add_points(
             self.ncl_ctd, name="ncl_ctd", visible=1,
             blending="translucent", size=8, border_width=0.0,
-            features={"class_label": self.ncl_cls},
+            features={"class_label": self.ncl_prd},
             face_color="class_label",
             face_color_cycle=self.color_map,
             opacity=1.0, 

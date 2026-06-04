@@ -137,7 +137,7 @@ class TrainClasses:
                     
             # Paths
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            ncl_cls_path = vws_path / "nuclei_classes.pkl"
+            ncl_cls_path = vws_path / "nuclei_classes_annotations.pkl"
             stk_nrm_path = vws_path / "stack_norm.npz"
             
             if ncl_cls_path.exists():
@@ -283,7 +283,7 @@ if __name__ == "__main__":
             
     vwr.add_points(
         ncl_ctd, name="points", visible=1,
-        blending="translucent", size=5, border_width=0.0,
+        blending="translucent", size=8, border_width=0.0,
         features={"class_label": prds},
         face_color="class_label",
         face_color_cycle=color_map,

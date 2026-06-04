@@ -27,7 +27,7 @@ classify_parameters = {
     
     "colors" : [
         [0.2, 0.2, 0.2], # NaNs
-        [0.5, 0.5, 0.5], # Other
+        [0.0, 0.0, 1.0], # Other
         [0.0, 1.0, 0.0], # Epithelium
         [1.0, 0.0, 0.0], # Neutrophil
         [1.0, 0.0, 1.0], # Macrophage
@@ -87,7 +87,7 @@ class Classify:
         # Paths
         vws_path = self.vws_paths[self.vws_idx]
         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-        ncl_cls_path = vws_path / "nuclei_classes.pkl"
+        ncl_ann_path = vws_path / "nuclei_classes_annotations.pkl"
         stk_raw_path = vws_path / "stack_raw.npz"
         
         # Load data
@@ -100,11 +100,11 @@ class Classify:
         self.stk_raw = load_compressed_stack(stk_raw_path)
         
         # Load nuclei classes (if exists)
-        if not ncl_cls_path.exists():
-            self.ncl_cls = np.full(self.ncl_ctd.shape[0], 0)
+        if not ncl_ann_path.exists():
+            self.ncl_ann = np.full(self.ncl_ctd.shape[0], 0)
         else:
-            with open(ncl_cls_path, "rb") as file:
-                self.ncl_cls = pickle.load(file)
+            with open(ncl_ann_path, "rb") as file:
+                self.ncl_ann = pickle.load(file)
                         
     def auto_contrast(self):
         img = self.vwr.layers["image"].data 
@@ -137,9 +137,14 @@ class Classify:
         
     def update_classes(self, tag):
         
+        # Paths
+        vws_path = self.vws_paths[self.vws_idx]
+        ncl_ann_path = vws_path / "nuclei_classes_annotations.pkl"
+        
+        # Fetch & update selected points
         idxs = list(self.vwr.layers["points"].selected_data)
-        self.ncl_cls[idxs] = tag
-        self.vwr.layers["points"].features["class_label"] = self.ncl_cls
+        self.ncl_ann[idxs] = tag
+        self.vwr.layers["points"].features["class_label"] = self.ncl_ann
         self.vwr.layers["points"].refresh_colors()
         self.vwr.layers["points"].selected_data = set()
         self.get_info()
@@ -148,9 +153,8 @@ class Classify:
             return    
         
         # Save
-        ncl_cls_path = self.vws_paths[self.vws_idx] / "nuclei_classes.pkl"
-        with open(ncl_cls_path, "wb") as file:
-            pickle.dump(self.ncl_cls, file)
+        with open(ncl_ann_path, "wb") as file:
+            pickle.dump(self.ncl_ann, file)
         
 #%% Class(Classify) : init_viewer() --------------------------------------------                
 
@@ -217,17 +221,17 @@ class Classify:
         
         self.vwr.add_image(
             self.stk_raw, name="image", visible=1,
-            gamma=0.75, 
+            opacity=0.6, gamma=0.6, 
             )
         self.auto_contrast()
                 
         self.vwr.add_points(
             self.ncl_ctd, name="points", visible=1,
             blending="translucent", size=5, border_width=0.0,
-            features={"class_label": self.ncl_cls},
+            features={"class_label": self.ncl_ann},
             face_color="class_label",
             face_color_cycle=self.color_map,
-            opacity=0.5, 
+            opacity=1.0, 
             )
         self.vwr.layers["points"].mode = "select"
                         
@@ -240,7 +244,7 @@ class Classify:
         classify_str = []
         for key, val in self.class_map.items():    
             classify_str.append(
-                f"{val['class']} : {np.sum(self.ncl_cls == val['tag'])}\n"
+                f"{val['class']} : {np.sum(self.ncl_ann == val['tag'])}\n"
                 )
         
         self.info.setText(
