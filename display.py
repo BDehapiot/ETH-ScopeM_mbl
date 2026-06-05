@@ -30,7 +30,7 @@ display_parameters = {
         [1.0, 0.0, 0.0], # Neutrophil
         [1.0, 0.0, 1.0], # Macrophage
         [0.0, 1.0, 1.0], # Bcell
-        [1.0, 0.0, 0.0], # Tcell
+        [1.0, 1.0, 0.0], # Tcell
         ],
 
     }

@@ -1,6 +1,7 @@
 #%% Imports -------------------------------------------------------------------
 
 import numpy as np
+import pandas as pd
 from pathlib import Path
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
@@ -241,12 +242,50 @@ def get_preview_stats(pvw_raw, pvw_msk, channels):
         pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
     return pvw_sts
 
+def format_preview_stats():
+    pass
+
 def get_nuclei_stats(crp, channels):        
     ncl_sts = {"avg" : {}, "std" : {}}
     for c, chn in enumerate(channels):
         ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
         ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
     return ncl_sts
+
+def format_nuclei_stats(
+        ncl_prd, ncl_ent, ncl_sts, vws_path, 
+        channels, classes
+        ):
+    
+    # Extrat data
+    ncl_df = pd.DataFrame()
+    n_nuclei = ncl_prd.shape[0]
+    n_classes = len(classes)
+    ncl_df["vws"    ] = [vws_path.name] * n_nuclei
+    ncl_df["idx"    ] = np.arange(n_nuclei)
+    ncl_df["class"  ] = np.array(classes)[ncl_prd]
+    ncl_df["entropy"] = ncl_ent
+    for msr in ["avg"]:
+        for chn in channels:
+            key = f"{chn}_{msr}"
+            ncl_df[key] = ncl_sts[msr][chn]
+    
+    # Class avg.
+    ncl_df_avg = ncl_df.groupby("class").mean(numeric_only=True)
+    ncl_df_avg = ncl_df_avg.drop(columns=["idx"])
+    ncl_df_avg.insert(
+        loc=0, column="count", value=ncl_df.groupby("class").size())
+    ncl_df_avg.insert(
+        loc=0, column="class", value=classes)
+    ncl_df_avg.insert(
+        loc=0, column="vws", value=[vws_path.name] * n_classes)
+    
+    # Mean norm. of class avg.
+    ncl_df_avg_nrm = ncl_df_avg.copy()
+    idx = ncl_df_avg_nrm.filter(regex='|'.join(["entropy", "avg"])).columns
+    ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].mean()
+    
+    return ncl_df, ncl_df_avg, ncl_df_avg_nrm
 
 #%% function(s) : crops -------------------------------------------------------
 
