@@ -261,7 +261,7 @@ def format_nuclei_stats(
     ncl_df = pd.DataFrame()
     n_nuclei = ncl_prd.shape[0]
     n_classes = len(classes)
-    ncl_df["vws"    ] = [vws_path.name] * n_nuclei
+    ncl_df["view"    ] = [vws_path.name] * n_nuclei
     ncl_df["idx"    ] = np.arange(n_nuclei)
     ncl_df["class"  ] = np.array(classes)[ncl_prd]
     ncl_df["entropy"] = ncl_ent
@@ -275,15 +275,16 @@ def format_nuclei_stats(
     ncl_df_avg = ncl_df_avg.drop(columns=["idx"])
     ncl_df_avg.insert(
         loc=0, column="count", value=ncl_df.groupby("class").size())
+    ncl_df_avg = ncl_df_avg.reset_index()
     ncl_df_avg.insert(
-        loc=0, column="class", value=classes)
-    ncl_df_avg.insert(
-        loc=0, column="vws", value=[vws_path.name] * n_classes)
+        loc=0, column="view", value=[vws_path.name] * n_classes)
     
     # Mean norm. of class avg.
     ncl_df_avg_nrm = ncl_df_avg.copy()
     idx = ncl_df_avg_nrm.filter(regex='|'.join(["entropy", "avg"])).columns
     ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].mean()
+    idx = ncl_df_avg_nrm.filter(regex='|'.join(["count"])).columns
+    ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].sum()
     
     return ncl_df, ncl_df_avg, ncl_df_avg_nrm
 

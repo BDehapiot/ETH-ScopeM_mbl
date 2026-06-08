@@ -360,24 +360,26 @@ class Main:
 
     def analyse(self):
         
-        mrg_ncl_df = []
-        mrg_ncl_df_avg = []
-        mrg_ncl_df_avg_nrm = []
-        for p, vws_path in enumerate(self.vws_paths):
-            
-            # Paths
-            ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-            ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
-            ncl_sts_path = vws_path / "nuclei_stats.pkl"
-            ncl_df_path = vws_path / "nuclei_df.csv"
-            ncl_df_avg_path = vws_path / "nuclei_df_avg.csv"
-            ncl_df_avg_nrm_path = vws_path / "nuclei_df_avg_nrm.csv"
-            mrg_ncl_df_path = self.data_path / "merged_nuclei_df.csv"
-            mrg_ncl_df_avg_path = self.data_path / "merged_nuclei_df_avg.csv"
-            mrg_ncl_df_avg_nrm_path = self.data_path / "merged_nuclei_df_avg_nrm.csv"
-            
-            if not ncl_df_avg_nrm_path.exists(): 
-            
+        # Paths
+        mrg_ncl_df_path = self.data_path / "merged_nuclei_df.csv"
+        mrg_ncl_df_avg_path = self.data_path / "merged_nuclei_df_avg.csv"
+        mrg_ncl_df_avg_nrm_path = self.data_path / "merged_nuclei_df_avg_nrm.csv"
+        
+        if not mrg_ncl_df_avg_nrm_path.exists(): 
+        
+            mrg_ncl_df = []
+            mrg_ncl_df_avg = []
+            mrg_ncl_df_avg_nrm = []
+            for p, vws_path in enumerate(self.vws_paths):
+                
+                # Paths
+                ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+                ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
+                ncl_sts_path = vws_path / "nuclei_stats.pkl"
+                ncl_df_path = vws_path / "nuclei_df.csv"
+                ncl_df_avg_path = vws_path / "nuclei_df_avg.csv"
+                ncl_df_avg_nrm_path = vws_path / "nuclei_df_avg_nrm.csv"
+    
                 # Log
                 t0 = time.time()
                 log_str = f"Main() : analyse : {vws_path.name}"
@@ -412,15 +414,15 @@ class Main:
                 t1 = time.time()
                 print(f"duration : {t1 - t0:.3f}s")
                     
-        # Merge dataframes
-        mrg_ncl_df = pd.concat(mrg_ncl_df, axis=0, ignore_index=True)
-        mrg_ncl_df_avg = pd.concat(mrg_ncl_df_avg, axis=0, ignore_index=True)
-        mrg_ncl_df_avg_nrm = pd.concat(mrg_ncl_df_avg_nrm, axis=0, ignore_index=True)
-        
-        # Save
-        mrg_ncl_df.to_csv(mrg_ncl_df_path, index=False)
-        mrg_ncl_df_avg.to_csv(mrg_ncl_df_avg_path, index=False)
-        mrg_ncl_df_avg_nrm.to_csv(mrg_ncl_df_avg_nrm_path, index=False)
+            # Merge dataframes
+            mrg_ncl_df = pd.concat(mrg_ncl_df, axis=0, ignore_index=True)
+            mrg_ncl_df_avg = pd.concat(mrg_ncl_df_avg, axis=0, ignore_index=True)
+            mrg_ncl_df_avg_nrm = pd.concat(mrg_ncl_df_avg_nrm, axis=0, ignore_index=True)
+            
+            # Save
+            mrg_ncl_df.to_csv(mrg_ncl_df_path, index=False)
+            mrg_ncl_df_avg.to_csv(mrg_ncl_df_avg_path, index=False)
+            mrg_ncl_df_avg_nrm.to_csv(mrg_ncl_df_avg_nrm_path, index=False)
 
 #%% Execute -------------------------------------------------------------------
 
@@ -429,176 +431,200 @@ if __name__ == "__main__":
     
 #%% 
     
-    # # Imports
-    # import pandas as pd
-
-    # # -------------------------------------------------------------------------
-
-    # def format_preview_results(pvw_sts, ):
-    #     pass
-
-    # def format_nuclei_results(ncl_prd, ncl_sts, ):
-    #     pass
+    # Paths
+    # mrg_ncl_df_path = main.data_path / "merged_nuclei_df.csv"
+    # mrg_ncl_df_avg_path = main.data_path / "merged_nuclei_df_avg.csv"
+    mrg_ncl_df_avg_nrm_path = main.data_path / "merged_nuclei_df_avg_nrm.csv"
     
-    # # -------------------------------------------------------------------------
-
-    # # Initialize
-    # vws_idx = 0
-    # vws_path = main.vws_paths[vws_idx]
-    # channels = main.channels
-    # classes = main.classes
-    # colors = main.colors
-    # crop_size = main.crop_size
-    # stk_level = main.stk_level
+    # Load
+    # df = pd.read_csv(mrg_ncl_df_path)
+    # dfa = pd.read_csv(mrg_ncl_df_avg_path)
+    dfan = pd.read_csv(mrg_ncl_df_avg_nrm_path)   
     
-    # # -------------------------------------------------------------------------
+#%% Plot (all view) -----------------------------------------------------------
 
-    # # Paths
-    # ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-    # ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
-    # ncl_sts_path = vws_path / "nuclei_stats.pkl"
+    # Imports
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
     
-    # # Load
-    # with open(ncl_prd_path, "rb") as file:
-    #     ncl_prd = pickle.load(file)
-    # with open(ncl_ent_path, "rb") as file:
-    #     ncl_ent = pickle.load(file)
-    # with open(ncl_sts_path, "rb") as file:
-    #     ncl_sts = pickle.load(file)
+    # -------------------------------------------------------------------------
+    
+    # Parameters
+    selected_channels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    short_classes = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    gcolor = [0.5, 0.5, 0.5]
+    fcolor = [0.9, 0.9, 0.9]
+    
+    # -------------------------------------------------------------------------
         
-    # # -------------------------------------------------------------------------
-    
-    # # Extrat data
-    # ncl_df = pd.DataFrame()
-    # n_nuclei = ncl_prd.shape[0]
-    # n_classes = len(classes)
-    # ncl_df["vws"    ] = [vws_path.name] * n_nuclei
-    # ncl_df["idx"    ] = np.arange(n_nuclei)
-    # ncl_df["class"  ] = np.array(classes)[ncl_prd]
-    # ncl_df["entropy"] = ncl_ent
-    # for msr in ["avg"]:
-    #     for chn in channels:
-    #         key = f"{chn}_{msr}"
-    #         ncl_df[key] = ncl_sts[msr][chn]
-    
-    # # Class avg.
-    # ncl_df_avg = ncl_df.groupby("class").mean(numeric_only=True)
-    # ncl_df_avg = ncl_df_avg.drop(columns=["idx"])
-    # ncl_df_avg.insert(
-    #     loc=0, column="count", value=ncl_df.groupby("class").size())
-    # ncl_df_avg.insert(
-    #     loc=0, column="class", value=classes)
-    # ncl_df_avg.insert(
-    #     loc=0, column="vws", value=[vws_path.name] * n_classes)
-    
-    # # Mean norm. of class avg.
-    # ncl_df_avg_nrm = ncl_df_avg.copy()
-    # idx = ncl_df_avg_nrm.filter(regex='|'.join(["entropy", "avg"])).columns
-    # ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].mean()
-    
-#%%
-
-    # import matplotlib.pyplot as plt
-    # import matplotlib.ticker as ticker
-    # from matplotlib.lines import Line2D
-    
-    # def thousands_formatter(x, pos):
-    #     if x >= 1000:
-    #         return f"{x * 0.001:.0f}k"
-    #     return f"{x:.0f}"
-    
-    # # Parameters
-    # selected_channels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
-    # short_classes = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-    # grid_color = [0.5, 0.5, 0.5]
-    # plot_color = [0.9, 0.9, 0.9]
-    
-    # # Initialize plot
-    # fig, axes = plt.subplots(
-    #     nrows=3, ncols=3, subplot_kw=dict(polar=True), figsize=(10, 10))
-    # axes = axes.flatten()
-    
-    # # # Format plot
-    # # fig.subplots_adjust(
-    # #     left=0.1, right=0.9, 
-    # #     bottom=0.1, top=0.9,
-    # #     wspace=0.2, hspace=0.6,
-    # #     )
-    
-    # fig.add_artist(Line2D(
-    #     [0.05, 0.95],
-    #     [0.32, 0.32],
-    #     color=grid_color,
-    #     linewidth=1,
-    #     linestyle="-",
-    #     ))
-    
-    # for i, ax in enumerate(axes):
+    def plot(vals, idx, color):
         
-    #     if i < 6:
-            
-    #         # Define angles
-    #         agls = np.linspace(
-    #             0, 2 * np.pi, len(selected_channels), endpoint=False).tolist()
-    #         agls += agls[:1]
-            
-    #         # Fetch data
-    #         vals = []
-    #         cla = classes[i]
-    #         for chn in selected_channels:
-    #             vals.append(np.array(
-    #                 ncl_df_avg_nrm.filter(like=f"{chn}_avg").loc[cla]).item())
-    #         vals += vals[:1]
-            
-    #         # Plot
-    #         ax.bar(agls, vals, width=0.5, color=colors[i], edgecolor="k")
-            
-    #         # Legend
-    #         ax.set_xticks(agls[:-1])
-    #         ax.set_xticklabels(selected_channels)
-    #         ax.xaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
-    #         ax.set_ylim(0, 3)
-    #         ax.set_yticks(np.arange(4))
-    #         ax.yaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
-    #         ax.set_title(cla, pad=10, fontsize=12, fontweight="bold")
-            
-    #     else:
-            
-    #         # Define angles
-    #         agls = np.linspace(
-    #             0, 2 * np.pi, len(classes), endpoint=False).tolist()
-    #         agls += agls[:1]
-            
-    #         if i == 6: 
-    #             header = "count"
-    #             title = "Nuclei count"
-    #         if i == 7: 
-    #             header = "entropy"
-    #             title = "Prediction entropy"
-    #             ax.set_ylim(0, 3)
-    #             ax.set_yticks(np.arange(4))
-    #         if i == 8: 
-    #             header = "ASC_avg"
-    #             title = "ASC_avg"
-    #             ax.set_ylim(0, 3)
-    #             ax.set_yticks(np.arange(4))
-            
-    #         # Fetch data
-    #         vals = []
-    #         for cla in classes:
-    #             vals.append(np.array(
-    #                 ncl_df_avg_nrm.filter(like=header).loc[cla]).item())
-    #         vals += vals[:1]
-            
-    #         # Plot
-    #         ax.bar(agls, vals, width=0.5, color=colors, edgecolor="k")
-            
-    #         # Legend
-    #         ax.set_xticks(agls[:-1])
-    #         ax.set_xticklabels(short_classes)
-    #         ax.xaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
-    #         ax.yaxis.set_major_formatter(ticker.FuncFormatter(thousands_formatter))
-    #         ax.yaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
-    #         ax.set_title(title, pad=10, fontsize=12, fontweight="bold")
+        # Scatter
+        xs = np.random.normal(loc=idx, scale=0.05, size=len(vals))
+        ax.scatter(
+            xs, vals, 
+            facecolors=color, edgecolors="none", 
+            s=10, alpha=1.0, zorder=0
+            )
+        
+        # Boxplot
+        ax.boxplot(
+            vals, positions=[idx], widths=0.5, patch_artist=True,
+            boxprops=dict(facecolor="none", color="k"),
+            medianprops=dict(color="k", linewidth=1.0),
+            showfliers=False
+            )
+        
+        # Mean line
+        ax.axhline(y=1, color=gcolor, linestyle="--", linewidth=1)
+    
+    # -------------------------------------------------------------------------
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(8, 8))
+    axes = axes.flatten()
+    
+    for cl, cla in enumerate(main.classes):
 
-    # plt.tight_layout()     
+        ax = axes[cl]        
+        dfs = dfan[dfan["class"] == cla]
+        
+        for ch, chn in enumerate(selected_channels):
+            vals = np.array(dfs[f"{chn}_avg"])
+            plot(vals, ch, main.colors[cl])
+                    
+        # Legend
+        ax.set_ylim(0, 6)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(selected_channels, rotation=45, ha="center")
+        ax.set_title(cla, pad=10, fontsize=12, fontweight="bold")
+    
+    for i, measure in enumerate(["count", "entropy", "ASC_avg"]):
+        
+        ax = axes[i + 6]  
+        
+        for cl, cla in enumerate(main.classes):
+            vals = dfan[dfan["class"] == cla][measure]
+            plot(vals, cl, main.colors[cl])
+            
+        # Legend
+        if measure == "count":
+            ax.set_ylim(0, 1)
+            ax.set_ylabel("Relative count")
+        elif measure == "entropy":
+            ax.set_ylim(0, 6)
+            ax.set_ylabel("Class prediction entropy")
+        else:
+            ax.set_ylim(0, 6)
+            ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(short_classes, rotation=45, ha="center")
+        ax.set_title(measure, pad=10, fontsize=12, fontweight="bold")
+
+    plt.tight_layout()     
+            
+#%% Plot (one view) ----------------------------------------------------------- 
+
+    # Imports
+    import matplotlib.pyplot as plt
+    import matplotlib.ticker as ticker
+    from matplotlib.lines import Line2D
+    
+    # -------------------------------------------------------------------------
+    
+    def thousands_formatter(x, pos):
+        if x >= 1000:
+            return f"{x * 0.001:.0f}k"
+        return f"{x:.0f}"
+    
+    # -------------------------------------------------------------------------
+    
+    # Parameters
+    selected_channels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    short_classes = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    grid_color = [0.5, 0.5, 0.5]
+    plot_color = [0.9, 0.9, 0.9]
+    
+    # -------------------------------------------------------------------------
+    
+    # Initialize plot
+    fig, axes = plt.subplots(
+        nrows=3, ncols=3, subplot_kw=dict(polar=True), figsize=(10, 10))
+    axes = axes.flatten()
+        
+    fig.add_artist(Line2D(
+        [0.05, 0.95],
+        [0.32, 0.32],
+        color=grid_color,
+        linewidth=1,
+        linestyle="-",
+        ))
+    
+    for i, ax in enumerate(axes):
+        
+        if i < 6:
+            
+            # Define angles
+            agls = np.linspace(
+                0, 2 * np.pi, len(selected_channels), endpoint=False).tolist()
+            agls += agls[:1]
+            
+            # Fetch data
+            vals = []
+            cla = main.classes[i]
+            for chn in selected_channels:
+                vals.append(np.array(
+                    mrg_ncl_df_avg_nrm.filter(like=f"{chn}_avg").loc[cla]).item())
+            vals += vals[:1]
+            
+            # Plot
+            ax.bar(agls, vals, width=0.5, color=main.colors[i], edgecolor="k")
+            
+            # Legend
+            ax.set_xticks(agls[:-1])
+            ax.set_xticklabels(selected_channels)
+            ax.xaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
+            ax.set_ylim(0, 3)
+            ax.set_yticks(np.arange(4))
+            ax.yaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
+            ax.set_title(cla, pad=10, fontsize=12, fontweight="bold")
+            
+        else:
+            
+            # Define angles
+            agls = np.linspace(
+                0, 2 * np.pi, len(main.classes), endpoint=False).tolist()
+            agls += agls[:1]
+            
+            if i == 6: 
+                header = "count"
+                title = "Nuclei count"
+            if i == 7: 
+                header = "entropy"
+                title = "Prediction entropy"
+                ax.set_ylim(0, 3)
+                ax.set_yticks(np.arange(4))
+            if i == 8: 
+                header = "ASC_avg"
+                title = "ASC_avg"
+                ax.set_ylim(0, 3)
+                ax.set_yticks(np.arange(4))
+            
+            # Fetch data
+            vals = []
+            for cla in main.classes:
+                vals.append(np.array(
+                    mrg_ncl_df_avg_nrm.filter(like=header).loc[cla]).item())
+            vals += vals[:1]
+            
+            # Plot
+            ax.bar(agls, vals, width=0.5, color=main.colors, edgecolor="k")
+            
+            # Legend
+            ax.set_xticks(agls[:-1])
+            ax.set_xticklabels(short_classes)
+            ax.xaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
+            ax.yaxis.set_major_formatter(ticker.FuncFormatter(thousands_formatter))
+            ax.yaxis.grid(color=grid_color, linestyle="-", linewidth=0.5)
+            ax.set_title(title, pad=10, fontsize=12, fontweight="bold")
+
+    plt.tight_layout()     
