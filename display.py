@@ -15,32 +15,12 @@ from qtpy.QtWidgets import (
     QPushButton, QRadioButton, QCheckBox, QWidget,
     )
 
-#%% Inputs --------------------------------------------------------------------
-
-display_parameters = {
-        
-    # Paths
-    "data_path" : Path("D:\local_mbl\data"),
-
-    # Maps
-        
-    "colors" : [
-        [0.0, 0.0, 1.0], # Other
-        [0.0, 1.0, 0.0], # Epithelium
-        [1.0, 0.0, 0.0], # Neutrophil
-        [1.0, 0.0, 1.0], # Macrophage
-        [0.0, 1.0, 1.0], # Bcell
-        [1.0, 1.0, 0.0], # Tcell
-        ],
-
-    }
-
 #%% Class(Display) ------------------------------------------------------------
 
 class Display:
     def __init__(self, main, parameters=None):
         self.main = main
-        self.parameters = parameters | main.parameters
+        self.parameters = main.parameters
         for key, val in self.parameters.items():
             if not isinstance(val, dict):
                 setattr(self, key, val)
@@ -232,4 +212,4 @@ class Display:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    display = Display(main, parameters=display_parameters)
+    display = Display(main)

@@ -3,6 +3,7 @@
 import numpy as np
 import pandas as pd
 from pathlib import Path
+import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
@@ -232,62 +233,6 @@ def get_nuclei_centroids(ncl_msk, n_levels=5):
         ctd["x"].append(x / 2 ** level) 
     return ctd
 
-#%% function(s) : statistics --------------------------------------------------
-
-def get_preview_stats(pvw_raw, pvw_msk, channels):
-    pvw_msk = pvw_msk > 0
-    pvw_sts = {"avg" : {}, "std" : {}}
-    for c, chn in enumerate(channels):
-        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
-        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
-    return pvw_sts
-
-def format_preview_stats():
-    pass
-
-def get_nuclei_stats(crp, channels):        
-    ncl_sts = {"avg" : {}, "std" : {}}
-    for c, chn in enumerate(channels):
-        ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
-        ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
-    return ncl_sts
-
-def format_nuclei_stats(
-        ncl_prd, ncl_ent, ncl_sts, vws_path, 
-        channels, classes
-        ):
-    
-    # Extrat data
-    ncl_df = pd.DataFrame()
-    n_nuclei = ncl_prd.shape[0]
-    n_classes = len(classes)
-    ncl_df["view"    ] = [vws_path.name] * n_nuclei
-    ncl_df["idx"    ] = np.arange(n_nuclei)
-    ncl_df["class"  ] = np.array(classes)[ncl_prd]
-    ncl_df["entropy"] = ncl_ent
-    for msr in ["avg"]:
-        for chn in channels:
-            key = f"{chn}_{msr}"
-            ncl_df[key] = ncl_sts[msr][chn]
-    
-    # Class avg.
-    ncl_df_avg = ncl_df.groupby("class").mean(numeric_only=True)
-    ncl_df_avg = ncl_df_avg.drop(columns=["idx"])
-    ncl_df_avg.insert(
-        loc=0, column="count", value=ncl_df.groupby("class").size())
-    ncl_df_avg = ncl_df_avg.reset_index()
-    ncl_df_avg.insert(
-        loc=0, column="view", value=[vws_path.name] * n_classes)
-    
-    # Mean norm. of class avg.
-    ncl_df_avg_nrm = ncl_df_avg.copy()
-    idx = ncl_df_avg_nrm.filter(regex='|'.join(["entropy", "avg"])).columns
-    ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].mean()
-    idx = ncl_df_avg_nrm.filter(regex='|'.join(["count"])).columns
-    ncl_df_avg_nrm[idx] = ncl_df_avg_nrm[idx] / ncl_df_avg_nrm[idx].sum()
-    
-    return ncl_df, ncl_df_avg, ncl_df_avg_nrm
-
 #%% function(s) : crops -------------------------------------------------------
 
 def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
@@ -327,6 +272,176 @@ def prepare_crops(crp):
     crp = np.transpose(crp, (0, 2, 3, 1)) # transposition
     crp = crp.astype("float32") / 255 # normalize
     return crp
+
+#%% function(s) : statistics --------------------------------------------------
+
+def get_preview_stats(pvw_raw, pvw_msk, channels):
+    pvw_msk = pvw_msk > 0
+    pvw_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+    return pvw_sts
+
+def format_preview_stats():
+    pass
+
+def get_nuclei_stats(crp, channels):        
+    ncl_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
+        ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
+    return ncl_sts
+
+def format_nuclei_stats(
+        ncl_prd, ncl_ent, ncl_sts, vws_path, 
+        channels, classes
+        ):
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def mean_norm(df):
+        dfn = df.copy()
+        idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
+        dfn[idx] = df[idx] / df[idx].mean()
+        idx = df.filter(regex='|'.join(["count"])).columns
+        dfn[idx] = df[idx] / df[idx].sum()
+        return dfn
+    
+    def class_avg(df):
+        dfa = df.copy()
+        dfa = df.groupby("class").mean(numeric_only=True)
+        dfa = dfa.drop(columns=["idx"])
+        dfa.insert(loc=0, column="count", value=df.groupby("class").size())
+        dfa = dfa.reset_index()
+        dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
+        return dfa
+    
+    # Execute -----------------------------------------------------------------
+    
+    # Extrat data
+    ncl_df = pd.DataFrame()
+    n_nuclei = ncl_prd.shape[0]
+    n_classes = len(classes)
+    ncl_df["view"   ] = [vws_path.name] * n_nuclei
+    ncl_df["idx"    ] = np.arange(n_nuclei)
+    ncl_df["class"  ] = np.array(classes)[ncl_prd]
+    ncl_df["entropy"] = ncl_ent
+    for msr in ["avg"]:
+        for chn in channels:
+            key = f"{chn}_{msr}"
+            ncl_df[key] = ncl_sts[msr][chn]
+    ncl_dfa  = class_avg(ncl_df)
+    ncl_dfn  = mean_norm(ncl_df)
+    ncl_dfan = mean_norm(ncl_dfa)
+        
+    return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
+
+#%% Plots ---------------------------------------------------------------------
+
+def plot(dfa, dfan, channels, classes, colors):
+    
+    # Inputs ------------------------------------------------------------------
+    
+    gcolor = [0.5, 0.5, 0.5]
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def _plot(ax, vals, idx, color):
+        
+        # Scatter
+        xs = np.random.normal(loc=idx, scale=0.05, size=len(vals))
+        ax.scatter(
+            xs, vals, 
+            facecolors=color, edgecolors="none", 
+            s=10, alpha=1.0, zorder=0
+            )
+        
+        # Boxplot
+        ax.boxplot(
+            vals, positions=[idx], widths=0.5, patch_artist=True,
+            boxprops=dict(color=gcolor, facecolor="none", linewidth=1.0),
+            medianprops=dict(color="k", linewidth=1.0),
+            whiskerprops=dict(color=gcolor, linewidth=1.0),
+            capprops=dict(color=gcolor, linewidth=1.0),
+            showfliers=False
+            )
+        
+        # Mean line
+        ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
+        
+        # x grid
+        ax.grid(axis="x", linestyle=":", alpha=0.6, color=gcolor)
+    
+    # Execute -----------------------------------------------------------------
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(7, 10))
+    axes = axes.flatten()
+    
+    for cl, cla in enumerate(classes):
+
+        ax = axes[cl]        
+        dfs = dfan[dfan["class"] == cla]
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(dfs[f"{chn}_avg"])
+            _plot(ax, vals, ch, colors[cl])
+                    
+        # Legend
+        ax.set_ylim(0, 6)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        ax.set_title(cla, pad=10)
+    
+    for i, measure in enumerate(["count", "entropy", "ASC_avg"]):
+        
+        ax = axes[i + 6]  
+        
+        dfs = dfa if measure == "entropy" else dfan
+        
+        for cl, cla in enumerate(classes):
+            vals = dfs[dfs["class"] == cla][measure]
+            _plot(ax, vals, cl, colors[cl])
+            
+        # Legend
+        if measure == "count":
+            ax.set_ylim(0, 1)
+            ax.set_ylabel("Count")
+            ax.set_title("Relative count", pad=10)
+        if measure == "entropy":
+            ax.set_ylim(0, 1)
+            ax.set_ylabel("Entropy")
+            ax.set_title("Class pred. entropy", pad=10)
+        if measure == "ASC_avg":
+            ax.set_ylim(0, 6)
+            ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+            ax.set_title("ASC Fluo. Int.", pad=10)
+        ax.set_xticklabels(sclasses, rotation=45, ha="center")
+
+    # Main title    
+    fig.suptitle(
+        dfa["view"].iloc[0] if dfa["view"].is_unique else "All views",
+        fontsize=16, fontweight="bold", color="k",
+        y=0.95, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n view(s) = {dfa['view'].nunique()}\n"
+        f"n nuclei = {dfa['count'].sum():,}"
+        )
+    fig.text(
+        0.05, 0.91, text,
+        fontsize=12, style="italic", color=gcolor,
+        ha="left", va="top",
+        )
+
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+
+    return fig
 
 #%% Execute -------------------------------------------------------------------
 

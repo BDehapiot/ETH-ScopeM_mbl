@@ -16,33 +16,12 @@ from qtpy.QtWidgets import (
     QPushButton, QWidget, QLabel,
     )
 
-#%% Inputs --------------------------------------------------------------------
-
-classify_parameters = {
-        
-    # Paths
-    "data_path" : Path("D:\local_mbl\data"),
-    
-    # Maps
-    
-    "colors" : [
-        [0.2, 0.2, 0.2], # NaNs
-        [0.0, 0.0, 1.0], # Other
-        [0.0, 1.0, 0.0], # Epithelium
-        [1.0, 0.0, 0.0], # Neutrophil
-        [1.0, 0.0, 1.0], # Macrophage
-        [0.0, 1.0, 1.0], # Bcell
-        [1.0, 1.0, 0.0], # Tcell
-        ],
-    
-    }
-
 #%% Class : Classify() --------------------------------------------------------
 
 class Classify:
     def __init__(self, main, parameters=None):
         self.main = main
-        self.parameters = parameters | main.parameters
+        self.parameters = main.parameters
         for key, val in self.parameters.items():
             if not isinstance(val, dict):
                 setattr(self, key, val)
@@ -66,6 +45,7 @@ class Classify:
         
         # Maps
         self.classes.insert(0, "NaN")
+        self.colors.insert(0, [0.2, 0.2, 0.2])
         self.class_map = {
             "cls_nan" : {"tag" : 0, "color" : self.colors[0], "class" : self.classes[0]},
             "cls_oth" : {"tag" : 1, "color" : self.colors[1], "class" : self.classes[1]},
@@ -257,4 +237,4 @@ class Classify:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    classify = Classify(main, parameters=classify_parameters)
+    classify = Classify(main)
