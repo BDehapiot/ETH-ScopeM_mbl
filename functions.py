@@ -2,7 +2,6 @@
 
 import numpy as np
 import pandas as pd
-from pathlib import Path
 import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
@@ -61,6 +60,11 @@ def prep_preview(pvw_raw, channels=[2, 5, 6]):
 
 def norm_data(arr, pvw_sts, channel=None):
     
+    def _norm_data(arr, avg, std):
+        arr -= avg
+        arr /= std
+        return norm_pct(arr)
+    
     if arr.ndim == 2 and channel is None:
         raise ValueError("please provide 'channel' as str for 2D ndarray")   
     
@@ -69,18 +73,16 @@ def norm_data(arr, pvw_sts, channel=None):
     if arr.ndim == 2:
         avg = pvw_sts["avg"][channel]
         std = pvw_sts["std"][channel]
-        arr -= avg
-        arr /= std
-        arr = norm_pct(arr)
+        arr = _norm_data(arr, avg, std)
         
     elif arr.ndim == 3:
         channels = list(pvw_sts["avg"])
+        
+        
         for c, chn in enumerate(channels):
             avg = pvw_sts["avg"][chn]
             std = pvw_sts["std"][chn]
-            arr[c] -= avg
-            arr[c] /= std
-            arr[c] = norm_pct(arr[c])
+            arr = _norm_data(arr, avg, std)
     
     return arr
 

@@ -3,7 +3,6 @@
 import napari
 import pickle
 import numpy as np
-from pathlib import Path
 from main import Main, main_parameters
 
 # functions
