@@ -366,6 +366,7 @@ class Main:
         mncl_dfa_path = self.data_path / "merged_nuclei_dfa.csv"
         mncl_dfn_path = self.data_path / "merged_nuclei_dfn.csv"
         mncl_dfan_path = self.data_path / "merged_nuclei_dfan.csv"
+        mncl_plot_path = self.data_path / "merged_nuclei_plot.png"
         
         if not mncl_dfan_path.exists(): 
         
@@ -380,6 +381,7 @@ class Main:
                 ncl_dfa_path = vws_path / "nuclei_dfa.csv"
                 ncl_dfn_path = vws_path / "nuclei_dfn.csv"
                 ncl_dfan_path = vws_path / "nuclei_dfan.csv"
+                ncl_plot_path = vws_path / "nuclei_plot.png"
     
                 # Log
                 t0 = time.time()
@@ -402,9 +404,9 @@ class Main:
                     self.channels, self.classes
                     )
                 
-                # # Plot
-                # fig = plot(ncl_df_avg, ncl_df_avg_nrm, 
-                #     self.channels, self.classes, self.colors)
+                # Plot
+                fig = plot(ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, 
+                    self.channels, self.classes, self.colors)
                 
                 # Append
                 mncl_df.append(ncl_df)
@@ -417,7 +419,7 @@ class Main:
                 ncl_dfa.to_csv(ncl_dfa_path, index=False)
                 ncl_dfn.to_csv(ncl_dfn_path, index=False)
                 ncl_dfan.to_csv(ncl_dfan_path, index=False)
-                # fig.savefig("nuclei_df_plot.png", dpi=300, bbox_inches="tight")
+                fig.savefig(ncl_plot_path, dpi=150, bbox_inches="tight")
                 
                 t1 = time.time()
                 print(f"duration : {t1 - t0:.3f}s")
@@ -428,16 +430,16 @@ class Main:
             mncl_dfn = pd.concat(mncl_dfn, axis=0, ignore_index=True)
             mncl_dfan = pd.concat(mncl_dfan, axis=0, ignore_index=True)
             
-            # # # Plot
-            # # fig = plot(mrg_ncl_df_avg, mrg_ncl_df_avg_nrm, 
-            # #     self.channels, self.classes, self.colors)
+            # Plot
+            fig = plot(mncl_df, mncl_dfa, mncl_dfn, mncl_dfan, 
+                self.channels, self.classes, self.colors)
             
             # Save
             mncl_df.to_csv(mncl_df_path, index=False)
             mncl_dfa.to_csv(mncl_dfa_path, index=False)
             mncl_dfn.to_csv(mncl_dfn_path, index=False)
             mncl_dfan.to_csv(mncl_dfan_path, index=False)
-            # # fig.savefig("merged_nuclei_df_plot.png", dpi=300, bbox_inches="tight")
+            fig.savefig(mncl_plot_path, dpi=150, bbox_inches="tight")
 
 #%% Execute -------------------------------------------------------------------
 
@@ -446,146 +448,17 @@ if __name__ == "__main__":
     
 #%% Load ----------------------------------------------------------------------
     
-    vws_idx = 5
+    # vws_idx = 0
+    # # Paths
+    # if isinstance(vws_idx, int):
+    #     path = main.vws_paths[vws_idx]
+    #     prefix = ""
+    # elif vws_idx == "all":
+    #     path = main.data_path
+    #     prefix = "merged_"
 
-    # Paths
-    if isinstance(vws_idx, int):
-        path = main.vws_paths[vws_idx]
-        prefix = ""
-    elif vws_idx == "all":
-        path = main.data_path
-        prefix = "merged_"
-
-    # Load
-    df = pd.read_csv(path / f"{prefix}nuclei_df.csv")
-    dfn = pd.read_csv(path / f"{prefix}nuclei_dfn.csv")
-    dfa = pd.read_csv(path / f"{prefix}nuclei_dfa.csv")
-    dfan = pd.read_csv(path / f"{prefix}nuclei_dfan.csv")   
-    
-#%% Plot function(s) ----------------------------------------------------------
-    
-    import matplotlib.pyplot as plt
-
-    def plot(df, dfa, dfn, dfan, channels, classes, colors):
-        
-        # Inputs ------------------------------------------------------------------
-        
-        gcolor = [0.5, 0.5, 0.5]
-        schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
-        sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-        merged = df["view"].nunique(dropna=False) > 1
-        
-        # Nested function(s) ------------------------------------------------------
-        
-        def _plot(ax, vals, idx, color, scatter=False, merged=False):
-            
-            if scatter:
-            
-                # Scatter
-                xs = np.random.normal(loc=idx, scale=0.05, size=len(vals))
-                ax.scatter(
-                    xs, vals, 
-                    facecolors=color, edgecolors="none", 
-                    s=10, alpha=1.0, zorder=0
-                    )
-            
-            # Boxplot
-            if merged:
-                medianprops = dict(color="k", linewidth=1.0)
-            else:
-                medianprops = dict(color=color, linewidth=2.0)
-            ax.boxplot(
-                vals, positions=[idx], widths=0.5, patch_artist=True,
-                boxprops=dict(color=gcolor, facecolor="none", linewidth=1.0),
-                medianprops=medianprops,
-                whiskerprops=dict(color=gcolor, linewidth=1.0),
-                capprops=dict(color=gcolor, linewidth=1.0),
-                showfliers=False
-                )
-            
-            # Mean line
-            ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
-            
-            # x grid
-            ax.grid(axis="x", linestyle=":", alpha=0.6, color=gcolor)
-        
-        # Execute -----------------------------------------------------------------
-        
-        # Initialize plot
-        fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(7, 10))
-        axes = axes.flatten()
-        
-        for cl, cla in enumerate(classes):
-    
-            ax = axes[cl]        
-            if merged:
-                dfs = dfan[dfan["class"] == cla]
-            else:
-                dfs = dfn[dfn["class"] == cla]
-            
-            for ch, chn in enumerate(schannels):
-                vals = np.array(dfs[f"{chn}_avg"])
-                _plot(ax, vals, ch, colors[cl], scatter=False, merged=merged)
-                        
-            # Legend
-            if merged:
-                ax.set_ylim(0, 6)
-            ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-            ax.set_xticklabels(schannels, rotation=45, ha="center")
-            ax.set_title(cla, pad=10)
-        
-        for i, measure in enumerate(["count", "entropy", "ASC_avg"]):
-            
-            ax = axes[i + 6] 
-            
-            if measure == "count":
-                dfs = dfan
-            if measure == "entropy":
-                dfs = dfa if merged else df
-            if measure == "ASC_avg":
-                dfs = dfan if merged else dfn
-            
-            for cl, cla in enumerate(classes):
-                vals = dfs[dfs["class"] == cla][measure]
-                _plot(ax, vals, cl, colors[cl], merged)
-                
-            # Legend
-            if measure == "count":
-                ax.set_ylim(0, 1)
-                ax.set_ylabel("Count")
-                ax.set_title("Relative count", pad=10)
-            if measure == "entropy":
-                ax.set_ylabel("Entropy")
-                ax.set_title("Class pred. entropy", pad=10)
-            if measure == "ASC_avg":
-                if merged:
-                    ax.set_ylim(0, 6)
-                ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-                ax.set_title("ASC Fluo. Int.", pad=10)
-            ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    
-        # Main title    
-        fig.suptitle(
-            "Merged views" if merged else dfa["view"].iloc[0],
-            fontsize=16, fontweight="bold", color="k",
-            y=0.94, x=0.025, ha="left",
-            )
-    
-        # Secondary text
-        text = (
-            f"n view(s) = {dfa['view'].nunique()}\n"
-            f"n nuclei = {dfa['count'].sum():,}"
-            )
-        fig.text(
-            0.05, 0.905, text,
-            fontsize=12, style="italic", color=gcolor,
-            ha="left", va="top",
-            )
-    
-        plt.tight_layout(rect=[0, 0, 1, 0.9])
-    
-        return fig
-
-#%% Plot ----------------------------------------------------------------------
-    
-    plot(df, dfa, dfn, dfan, main.channels, main.classes, main.colors)
+    # # Load
+    # df = pd.read_csv(path / f"{prefix}nuclei_df.csv")
+    # dfn = pd.read_csv(path / f"{prefix}nuclei_dfn.csv")
+    # dfa = pd.read_csv(path / f"{prefix}nuclei_dfa.csv")
+    # dfan = pd.read_csv(path / f"{prefix}nuclei_dfan.csv")   

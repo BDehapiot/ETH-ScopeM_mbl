@@ -10,9 +10,12 @@ from main import Main, main_parameters
 from functions import load_compressed_stack
 
 # Qt
+from qtpy.QtCore import Qt
+from qtpy.QtGui import QPixmap
 from qtpy.QtWidgets import (
     QButtonGroup, QGroupBox, QHBoxLayout, QVBoxLayout,
-    QPushButton, QRadioButton, QCheckBox, QWidget,
+    QPushButton, QRadioButton, QCheckBox, 
+    QWidget, QLabel,
     )
 
 #%% Class(Display) ------------------------------------------------------------
@@ -70,6 +73,7 @@ class Display:
         pvw_sts_path = vws_path / "preview_stats.pkl"
         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
         ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+        ncl_plt_path = vws_path / "nuclei_plot.png"
         stk_nrm_path = vws_path / "stack_norm.npz"
         
         # Load
@@ -85,6 +89,9 @@ class Display:
                 ))
         with open(ncl_prd_path, "rb") as file:
             self.ncl_prd = pickle.load(file)
+        self.ncl_plt = QPixmap(str(ncl_plt_path))
+        self.ncl_plt = self.ncl_plt.scaledToWidth(
+            int(self.dock_width / 1.75), Qt.SmoothTransformation)
         self.stk_nrm = load_compressed_stack(stk_nrm_path)
 
     def auto_contrast(self):
@@ -98,6 +105,7 @@ class Display:
         self.vwr.layers["stk_nrm"].data = self.stk_nrm[self.chn_idx]
         self.vwr.layers["ncl_ctd"].data = self.ncl_ctd
         self.vwr.layers["ncl_ctd"].features = {"class_label": self.ncl_prd}
+        self.plt_label.setPixmap(self.ncl_plt)
         self.update_class()
         self.auto_contrast()
     
@@ -112,7 +120,7 @@ class Display:
         self.cls_idx = [self.classes.index(c) for c in self.cll]
         self.ncl_msk = np.isin(self.ncl_prd, self.cls_idx)
         self.vwr.layers["ncl_ctd"].shown = self.ncl_msk
-
+        
     # Buttons -----------------------------------------------------------------
     
     def prev_view(self):
@@ -147,7 +155,7 @@ class Display:
         # Create "channel" menu
         self.chn_group = QButtonGroup()
         self.chn_group_box = QGroupBox("Select channel")
-        self.chn_group_layout = QVBoxLayout()
+        self.chn_group_layout = QHBoxLayout()
         for c in self.channels:
             setattr(self, f"rad_{c}", QRadioButton(f"{c}"))
             if c == self.channels[self.chn_idx]:
@@ -161,7 +169,7 @@ class Display:
         self.cls_group = QButtonGroup()
         self.cls_group.setExclusive(False)
         self.cls_group_box = QGroupBox("Select class")
-        self.cls_group_layout = QVBoxLayout()
+        self.cls_group_layout = QHBoxLayout()
         for c in self.classes:
             setattr(self, f"chk_{c}", QCheckBox(f"{c}")) 
             if c == self.classes[self.cls_idx]:
@@ -171,17 +179,23 @@ class Display:
             getattr(self, f"chk_{c}").stateChanged.connect(self.update_class)
         self.cls_group_box.setLayout(self.cls_group_layout)
         
+        # Create "plot" menu
+        self.plt_label = QLabel()
+        self.plt_label.setAlignment(Qt.AlignCenter)
+        
         # Create layout
         self.layout = QVBoxLayout()
         self.layout.addWidget(self.vws_group_box)
         self.layout.addWidget(self.chn_group_box)
         self.layout.addWidget(self.cls_group_box)
+        self.layout.addWidget(self.plt_label)
 
         # Create widget
         self.widget = QWidget()
         self.widget.setLayout(self.layout)
         self.vwr.window.add_dock_widget(
             self.widget, area="right", name="Painter") 
+        self.dock_width = self.widget.width()
         
         # Shortcuts -----------------------------------------------------------
 
@@ -205,6 +219,7 @@ class Display:
             opacity=1.0, 
             )
         
+        self.plt_label.setPixmap(self.ncl_plt)
         self.update_class()
         self.auto_contrast()
 

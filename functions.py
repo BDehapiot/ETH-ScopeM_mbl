@@ -337,35 +337,33 @@ def format_nuclei_stats(
         
     return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
 
-#%% Plots ---------------------------------------------------------------------
+#%% function(s) : Plots -------------------------------------------------------
 
-def plot(dfa, dfan, channels, classes, colors):
+def plot(df, dfa, dfn, dfan, channels, classes, colors):
     
     # Inputs ------------------------------------------------------------------
     
-    gcolor = [0.5, 0.5, 0.5]
+    plt.ioff()
+    gcolor = "0.5"
     schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
     sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = df["view"].nunique(dropna=False) > 1
     
     # Nested function(s) ------------------------------------------------------
     
-    def _plot(ax, vals, idx, color):
-        
-        # Scatter
-        xs = np.random.normal(loc=idx, scale=0.05, size=len(vals))
-        ax.scatter(
-            xs, vals, 
-            facecolors=color, edgecolors="none", 
-            s=10, alpha=1.0, zorder=0
-            )
-        
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    
+    def _plot(ax, vals, idx, color, merged=False):
+                    
         # Boxplot
         ax.boxplot(
             vals, positions=[idx], widths=0.5, patch_artist=True,
-            boxprops=dict(color=gcolor, facecolor="none", linewidth=1.0),
-            medianprops=dict(color="k", linewidth=1.0),
-            whiskerprops=dict(color=gcolor, linewidth=1.0),
-            capprops=dict(color=gcolor, linewidth=1.0),
+            boxprops=dict(color=gcolor, facecolor="none", linewidth=1),
+            medianprops=dict(color=color, linewidth=2),
+            whiskerprops=dict(color=gcolor, linewidth=1),
+            capprops=dict(color=gcolor, linewidth=1),
             showfliers=False
             )
         
@@ -383,28 +381,33 @@ def plot(dfa, dfan, channels, classes, colors):
     
     for cl, cla in enumerate(classes):
 
-        ax = axes[cl]        
-        dfs = dfan[dfan["class"] == cla]
+        ax = axes[cl]                   
+        dfs = dfan if merged else dfn
         
         for ch, chn in enumerate(schannels):
-            vals = np.array(dfs[f"{chn}_avg"])
-            _plot(ax, vals, ch, colors[cl])
+            vals = np.array(dfs[dfs["class"] == cla][f"{chn}_avg"])
+            _plot(ax, vals, ch, colors[cl], merged=merged)
                     
         # Legend
-        ax.set_ylim(0, 6)
+        _ylim(ax)
         ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
         ax.set_xticklabels(schannels, rotation=45, ha="center")
         ax.set_title(cla, pad=10)
     
     for i, measure in enumerate(["count", "entropy", "ASC_avg"]):
         
-        ax = axes[i + 6]  
+        ax = axes[i + 6] 
         
-        dfs = dfa if measure == "entropy" else dfan
+        if measure == "count":
+            dfs = dfan
+        if measure == "entropy":
+            dfs = dfa if merged else df
+        if measure == "ASC_avg":
+            dfs = dfan if merged else dfn
         
         for cl, cla in enumerate(classes):
             vals = dfs[dfs["class"] == cla][measure]
-            _plot(ax, vals, cl, colors[cl])
+            _plot(ax, vals, cl, colors[cl], merged=merged)
             
         # Legend
         if measure == "count":
@@ -416,89 +419,32 @@ def plot(dfa, dfan, channels, classes, colors):
             ax.set_ylabel("Entropy")
             ax.set_title("Class pred. entropy", pad=10)
         if measure == "ASC_avg":
-            ax.set_ylim(0, 6)
+            _ylim(ax)
             ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
             ax.set_title("ASC Fluo. Int.", pad=10)
         ax.set_xticklabels(sclasses, rotation=45, ha="center")
 
     # Main title    
     fig.suptitle(
-        dfa["view"].iloc[0] if dfa["view"].is_unique else "All views",
+        "Merged views" if merged else dfa["view"].iloc[0],
         fontsize=16, fontweight="bold", color="k",
         y=0.95, x=0.025, ha="left",
         )
 
     # Secondary text
     text = (
-        f"n view(s) = {dfa['view'].nunique()}\n"
-        f"n nuclei = {dfa['count'].sum():,}"
+        f"n views = {dfa['view'].nunique()}\n"
+        f"n nuclei = {dfa['count'].sum():,}\n"
+        f"avg. entropy = {dfa['entropy'].mean():.3f}"
         )
     fig.text(
-        0.05, 0.91, text,
-        fontsize=12, style="italic", color=gcolor,
+        0.05, 0.92, text,
+        fontsize=12, color=gcolor,
         ha="left", va="top",
         )
 
     plt.tight_layout(rect=[0, 0, 1, 0.9])
+    plt.close(fig) 
+    plt.ion()
 
     return fig
-
-#%% Execute -------------------------------------------------------------------
-
-if __name__ == "__main__":
-    
-    # Imports 
-    import time
-    
-    # -------------------------------------------------------------------------
-    
-    # Paths
-    data_path = Path("D:\local_mbl\data")
-    # file_name = "251126_D7_S2_Scan1_unmixed.qptiff"
-    # file_name = "251126_E2_S2_Scan1_unmixed.qptiff"
-    # file_name = "251126_E6_S2_Scan1_unmixed.qptiff"
-    file_name = "251126_E7_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D1_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D2_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D3_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D4_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D5_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D6_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_D8_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_E1_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_E3_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_E4_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_E5_S2_Scan1_unmixed.qptiff"
-    # file_name = "251127_E8_S2_Scan1_unmixed.qptiff"
-
-    # -------------------------------------------------------------------------
-
-    # Parameters
-    path = data_path / file_name
-    channels = "all"
-    level = 4
-    roi_idx = 0
-    
-    # -------------------------------------------------------------------------
-            
-    t0 = time.time()
-    print("get_slide_metadata() : ", end="", flush=True)
-    mtd = get_slide_metadata(path)
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
-    
-    # -------------------------------------------------------------------------
-    
-    t0 = time.time()
-    print("load_view() : ", end="", flush=True)
-    vws = load_view(
-        path, metadata=mtd, 
-        channels=channels, level=level, roi_idx=roi_idx,
-        )
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s")
-    
-    # Display
-    import napari
-    vwr = napari.Viewer()
-    vwr.add_image(vws, gamma=0.5)
