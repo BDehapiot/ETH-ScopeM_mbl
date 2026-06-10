@@ -31,8 +31,33 @@ from scipy.stats import entropy
 #%% Inputs --------------------------------------------------------------------
 
 main_parameters = {
+
+    # Procedure
+    "force_extract"         : 0,
+    "force_predict_nuclei"  : 1,
+    "force_predict_classes" : 0,
+    "force_measure"         : 0,
+    "force_analyse"         : 0,
     
-    # Maps
+    # Paths
+    "data_path" : Path("D:\local_mbl\data_test"),
+    "model_preview_name" : "model-sm_preview_256_binary_227-1024",
+    "model_nuclei_name"  : "model-sm_nuclei_256_edt_192-1024",
+    "model_classes_name" : "model-cls_12_2_6_5045-8190b",
+    
+    # extract()
+    "pvw_level" : 4,
+    "stk_level" : 1,
+        
+    # predict_nuclei()
+    "thresh_0"  : 0.25,
+    "thresh_1"  : 0.50,    
+    
+    # # Measure()
+    # "crop_size" : 32,
+    
+    # Maps  -------------------------------------------------------------------
+    
     "channels" : [
         "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF",
         ],
@@ -48,23 +73,6 @@ main_parameters = {
         [0.0, 1.0, 1.0], # Bcell
         [0.8, 0.8, 0.0], # Tcell
         ],
-    
-    # Paths
-    "data_path" : Path("D:\local_mbl\data_test"),
-    "model_preview_name" : "model-sm_preview_256_binary_227-1024",
-    "model_nuclei_name"  : "model-sm_nuclei_256_edt_192-1024",
-    "model_classes_name" : "model-cls_12_2_6_5045-8190b",
-    
-    # extract()
-    "pvw_level" : 4,
-    "stk_level" : 1,
-        
-    # # predict_nuclei()
-    # "thresh_0"  : 0.25,
-    # "thresh_1"  : 0.50,    
-    
-    # # Measure()
-    # "crop_size" : 32,
 
     }
 
@@ -79,7 +87,7 @@ class Main:
         
         # Run
         self.extract()
-        # self.predict_nuclei()
+        self.predict_nuclei()
         # self.predict_classes()
         # self.measure()
         # self.analyse()
@@ -124,10 +132,9 @@ class Main:
                 pvw_msk_path = vws_path / "preview_mask.tif"
                 pvw_nrm_path = vws_path / "preview_norm.tif"
                 pvw_sts_path = vws_path / "preview_stats.pkl"
-                stk_raw_path = vws_path / "stack_raw.npz"
-                stk_nrm_path = vws_path / "stack_norm.npz"
+                stk_nrm_path = vws_path / "stack_norm.tif"
 
-                if not stk_nrm_path.exists():
+                if not stk_nrm_path.exists() or self.force_extract:
                     
                     # Log
                     t0i = time.time()
@@ -145,7 +152,7 @@ class Main:
                     
                     vws_path.mkdir(parents=True, exist_ok=True) 
                     
-                    # Preview -------------------------------------------------
+                    # Get previews --------------------------------------------
                     
                     t0 = time.time()
                     
@@ -163,50 +170,151 @@ class Main:
                     # Preview stats
                     pvw_sts = get_preview_stats(pvw_raw, pvw_msk, self.channels)
                     
-                    # Preview normalization
+                    # Preview norm.
                     pvw_nrm = (norm_data(pvw_raw, pvw_sts) * 255).astype("uint8")
                     
                     t1 = time.time()
-                    print(f"Get preview : {t1 - t0:.3f}s")
+                    print(f"{t1 - t0:.3f}s - get previews")
                     
-                    # Stack ---------------------------------------------------
+                    # Load stack ----------------------------------------------
                     
-                    # Stack raw
+                    t0 = time.time()
+                    
                     stk_raw = load_view(
                         qpt_path, metadata=mtd, channels="all", 
                         level=self.stk_level, roi_idx=roi_idx,
                         )
-                    stk_raw = norm_12_to_8bits(stk_raw)
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - load stack")
+
+                    # Norm stack ----------------------------------------------
                     
                     t0 = time.time()
                     
-                    # Stack normalization
                     stk_nrm = (norm_data(stk_raw, pvw_sts) * 255).astype("uint8")
                     
                     t1 = time.time()
-                    print(f"Get stack : {t1 - t0:.3f}s")
-                                        
-                    # # Save
-                    # io.imsave(pvw_raw_path, pvw_raw, check_contrast=False)
-                    # io.imsave(pvw_msk_path, pvw_msk, check_contrast=False)
-                    # io.imsave(pvw_nrm_path, pvw_nrm, check_contrast=False)
-                    # save_compressed_stack(stk_raw, stk_raw_path)
-                    # save_compressed_stack(stk_nrm, stk_nrm_path)
-                    # with open(pvw_sts_path, "wb") as file:
-                    #     pickle.dump(pvw_sts, file)     
+                    print(f"{t1 - t0:.3f}s - norm stack")
+                          
+                    # Save ----------------------------------------------------
+                    
+                    t0 = time.time()
+                    
+                    io.imsave(pvw_raw_path, pvw_raw, check_contrast=False)
+                    io.imsave(pvw_msk_path, pvw_msk, check_contrast=False)
+                    io.imsave(pvw_nrm_path, pvw_nrm, check_contrast=False)
+                    io.imsave(stk_nrm_path, stk_nrm, check_contrast=False)
+                    with open(pvw_sts_path, "wb")  as file:
+                        pickle.dump(pvw_sts, file)     
+                        
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - save")
                         
                     t1f = time.time()
-                    print(f"Total : {t1f - t0i:.3f}s")
+                    print(f"> {t1f - t0i:.3f}s")
+                    
+#%% Class(Main) : predict_nuclei() --------------------------------------------
+                   
+    def predict_nuclei(self):
+        
+        for p, vws_path in enumerate(self.vws_paths):
+
+            # Paths
+            qpt_path = self.qpt_paths[p]
+            mtd_path = self.mtd_paths[p]
+            pvw_sts_path = vws_path / "preview_stats.pkl"
+            ncl_msk_path = vws_path / "nuclei_mask.npz"
+            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+            roi_idx = int(vws_path.stem[-2:])
+            
+            if not ncl_ctd_path.exists() or self.force_predict_nuclei:
+                       
+                # Log
+                t0i = time.time()
+                log_str = f"Main() : predict_nuclei() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))
+                
+                # Model
+                if "model_nuclei" not in locals():
+                    model_nuclei = Model(
+                        parameters=None, 
+                        model_path=Path.cwd() / self.model_nuclei_name
+                        )
+                
+                # Load
+                with open(mtd_path, "rb") as file:
+                    mtd = pickle.load(file)
+                with open(pvw_sts_path, "rb") as file:
+                    pvw_sts = pickle.load(file)
+                
+                # Load --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                ncl = load_view(
+                    qpt_path, metadata=mtd, channels="DAPI", 
+                    level=0, roi_idx=roi_idx,
+                    )
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - load")
+                
+                # Predict -----------------------------------------------------
+                
+                # t0 = time.time()
+                
+                # ncl_prd = model_nuclei.predict(
+                #     norm_data(ncl, pvw_sts, channel="DAPI"), 
+                #     patch_overlap=32, batch_size=64, chunk_size=5000, 
+                #     )
+                
+                # t1 = time.time()
+                # print(f"{t1 - t0:.3f}s - predict")
+    
+                # Get mask ----------------------------------------------------
+    
+                # t0 = time.time()
+    
+                # ncl_msk = get_nuclei_mask(
+                #     ncl_prd, thresh_0=self.thresh_0, thresh_1=self.thresh_1)
+                
+                # t1 = time.time()
+                # print(f"{t1 - t0:.3f}s - get mask")
+    
+                # Get centroids -----------------------------------------------
+    
+                # t0 = time.time()
+                               
+                # ncl_ctd = get_nuclei_centroids(
+                #     ncl_msk, n_levels=len(mtd["level"]))
+                
+                # t1 = time.time()
+                # print(f"{t1 - t0:.3f}s - get centroids")
+                
+                # Save --------------------------------------------------------
+                
+                # t0 = time.time()
+                
+                # save_compressed_mask(ncl_msk, ncl_msk_path)
+                # with open(ncl_ctd_path, "wb") as file:
+                #     pickle.dump(ncl_ctd, file)
+    
+                # # Clear
+                # del ncl, ncl_prd, ncl_msk, ncl_ctd
+                # tf.keras.backend.clear_session()
+                # gc.collect()
+                
+                # t1 = time.time()
+                # print(f"{t1 - t0:.3f}s - save")
+                
+                t1f = time.time()
+                print(f"> {t1f - t0i:.3f}s")
                             
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    
-#%% Load ----------------------------------------------------------------------
-    
-    # Paths
-    vws_idx = 0
-    vws_path = main.vws_paths[vws_idx]    
-    
     

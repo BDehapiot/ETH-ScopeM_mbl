@@ -5,6 +5,7 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
+from joblib import Parallel, delayed
 
 # bdtools
 from bdtools.conn import lbl_conn
@@ -60,11 +61,6 @@ def prep_preview(pvw_raw, channels=[2, 5, 6]):
 
 def norm_data(arr, pvw_sts, channel=None):
     
-    def _norm_data(arr, avg, std):
-        arr -= avg
-        arr /= std
-        return norm_pct(arr)
-    
     if arr.ndim == 2 and channel is None:
         raise ValueError("please provide 'channel' as str for 2D ndarray")   
     
@@ -73,16 +69,20 @@ def norm_data(arr, pvw_sts, channel=None):
     if arr.ndim == 2:
         avg = pvw_sts["avg"][channel]
         std = pvw_sts["std"][channel]
-        arr = _norm_data(arr, avg, std)
+        arr -= avg
+        arr /= std
+        arr = norm_pct(arr)
         
     elif arr.ndim == 3:
         channels = list(pvw_sts["avg"])
-        
-        
+        avgs = np.array([pvw_sts["avg"][chn] for chn in channels])
+        stds = np.array([pvw_sts["std"][chn] for chn in channels])
+        avgs = avgs[:, np.newaxis, np.newaxis]
+        stds = stds[:, np.newaxis, np.newaxis]
+        arr -= avgs
+        arr /= stds
         for c, chn in enumerate(channels):
-            avg = pvw_sts["avg"][chn]
-            std = pvw_sts["std"][chn]
-            arr = _norm_data(arr, avg, std)
+            arr[c] = norm_pct(arr[c], sample_fraction=0.1)
     
     return arr
 

@@ -15,6 +15,9 @@ from bdtools.model.model import Model
 from bdtools.annotate import Annotate
 from bdtools.patch import extract_patches
 
+# skimage
+from skimage.transform import rescale
+
 #%% Inputs --------------------------------------------------------------------
 
 parameters = {
@@ -35,6 +38,10 @@ parameters = {
     "n_patches"             : 10, # save n_patches per preview image
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
+    
+    # Train -------------------------------------------------------------------
+    
+    "rf" : 0.5,
     
     }
 
@@ -77,6 +84,7 @@ model_parameters = {
     "augment_noise_p"    : 0.0,
     "augment_flip_p"     : 0.5,
     "augment_distort_p"  : 0.5,
+    "augment_balance"    : False, # (cls)
     
     "augment_parameters" : {
         
@@ -201,6 +209,20 @@ class TrainNuclei:
                 ))
         msks = np.stack(msks)
         imgs = np.stack(imgs)
+        
+        # Rescale (optional)
+        if self.rf != 1:
+            imgs = rescale(imgs, self.rf, order=0)
+            msks = rescale(msks, self.rf, order=0)
+            self.model_parameters["patch_size"] = (
+                int(self.model_parameters["patch_size"] * self.rf))
+            self.model_parameters["patch_overlap"] = (
+                int(self.model_parameters["patch_overlap"] * self.rf))
+                
+        # ///
+        self.msks = msks
+        self.imgs = imgs
+        # ///
             
         # Normalize data
         imgs = imgs.astype("float32") / 255
@@ -217,3 +239,21 @@ if __name__ == "__main__":
     main  = Main(parameters=main_parameters)
     train = TrainNuclei(
         main, parameters=parameters, model_parameters=model_parameters)
+    
+#%%
+    
+    # # Fetch
+    # imgs = train.imgs
+    # msks = train.msks
+    
+    # # # Downscale
+    # # from skimage.transform import rescale
+    # # imgs = rescale(imgs, train.rf, order=0)
+    # # msks = rescale(msks, train.rf, order=0)
+    
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(imgs)
+    # vwr.add_labels(msks)
+    
