@@ -212,20 +212,20 @@ class TrainNuclei:
         
         # Rescale (optional)
         if self.rf != 1:
-            imgs = rescale(imgs, self.rf, order=0)
-            msks = rescale(msks, self.rf, order=0)
+            imgs = rescale(imgs, (1, self.rf, self.rf), order=0)
+            msks = rescale(msks, (1, self.rf, self.rf), order=0)
             self.model_parameters["patch_size"] = (
                 int(self.model_parameters["patch_size"] * self.rf))
             self.model_parameters["patch_overlap"] = (
                 int(self.model_parameters["patch_overlap"] * self.rf))
                 
-        # ///
-        self.msks = msks
-        self.imgs = imgs
-        # ///
-            
         # Normalize data
         imgs = imgs.astype("float32") / 255
+        
+        # # ///
+        # self.msks = msks
+        # self.imgs = imgs
+        # # ///
             
         # Setup model
         self.model = Model(parameters=self.model_parameters, model_path=None)
@@ -245,12 +245,7 @@ if __name__ == "__main__":
     # # Fetch
     # imgs = train.imgs
     # msks = train.msks
-    
-    # # # Downscale
-    # # from skimage.transform import rescale
-    # # imgs = rescale(imgs, train.rf, order=0)
-    # # msks = rescale(msks, train.rf, order=0)
-    
+        
     # # Display
     # import napari
     # vwr = napari.Viewer()

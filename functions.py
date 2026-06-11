@@ -86,6 +86,22 @@ def norm_data(arr, pvw_sts, channel=None):
     
     return arr
 
+#%% function(s) : pad_images() ------------------------------------------------
+
+def pad_images(imgs):
+    imgs_padded = []
+    max_y = np.max([img.shape[0] for img in imgs])
+    max_x = np.max([img.shape[1] for img in imgs])
+    for img in imgs:
+        pad_y = max_y - img.shape[0]
+        pad_x = max_x - img.shape[1]
+        top, bottom = pad_y // 2, pad_y - (pad_y // 2)
+        left, right = pad_x // 2, pad_x - (pad_x // 2)
+        padding = ((top, bottom), (left, right))
+        imgs_padded.append(
+            np.pad(img, padding, mode="constant", constant_values=0))
+    return imgs_padded
+
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
 def get_slide_metadata(path):
@@ -217,22 +233,25 @@ def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
     
 #%% function(s) : nuclei segmentation -----------------------------------------
     
-def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, prc_level=1):
+def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=1):
     msk_0 = ncl_prd > thresh_0
     msk_1 = ncl_prd > thresh_1
     msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
     msk[lbl_conn(msk, conn=2) == 2] = 0
-    msk = remove_small_objects(
-        msk, min_size=0.5 * (2 ** prc_level) ** 2)
+    if ncl_level == 0: min_size = 8
+    if ncl_level == 1: min_size = 2
+    if ncl_level >= 2: min_size = 1
+    msk = remove_small_objects(msk, min_size=min_size)
     return msk > 0
 
-def get_nuclei_centroids(ncl_msk, n_levels=5):
+def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=1):
     props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
     y, x = props["centroid-0"], props["centroid-1"]
     ctd = {"y" : [], "x" : []}
     for level in range(n_levels):
-        ctd["y"].append(y / 2 ** level) 
-        ctd["x"].append(x / 2 ** level) 
+        factor = 2 ** (ncl_level - level)
+        ctd["y"].append(y * factor)
+        ctd["x"].append(x * factor)
     return ctd
 
 #%% function(s) : crops -------------------------------------------------------
