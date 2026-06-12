@@ -105,7 +105,7 @@ model_parameters = {
 
     }
 
-#%% Class(TrainPreview) --------------------------------------------------------------
+#%% Class(TrainPreview) -------------------------------------------------------
 
 class TrainPreview:
     def __init__(self, main, parameters=None, model_parameters=None):

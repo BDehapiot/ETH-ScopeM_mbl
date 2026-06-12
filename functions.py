@@ -86,6 +86,12 @@ def norm_data(arr, pvw_sts, channel=None):
     
     return arr
 
+#%% function(s) : get_patches() -----------------------------------------------
+
+# def get_patches(vws_paths, ):
+#     if paths[0].suffix = 
+#     pass
+
 #%% function(s) : pad_images() ------------------------------------------------
 
 def pad_images(imgs):

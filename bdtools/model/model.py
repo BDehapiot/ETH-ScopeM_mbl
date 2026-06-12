@@ -34,8 +34,8 @@ parameters = {
     "loss"               : "fcl",
     "metric"             : "acc",
     
-    # # sm
-    # "backbone"           : "resnet18",
+    # sm
+    "backbone"           : "resnet18",
     
     # cls
     "filters"            : [16, 32],
