@@ -1,5 +1,6 @@
 #%% Imports -------------------------------------------------------------------
 
+import time
 import numpy as np
 np.random.seed(42)
 from skimage import io
@@ -20,7 +21,7 @@ parameters = {
     
     # Procedure ---------------------------------------------------------------
     
-    "run_patches"  : 0, # new
+    "run_patches"  : 0,
     "run_annotate" : 0,
     "run_train"    : 1,
     
@@ -47,10 +48,23 @@ model_parameters = {
     
     "model_type"         : "sm",
     "input_shape"        : (None, None, 1),
-    "backbone"           : "resnet18",
-    "activation"         : "sigmoid",
     "loss"               : "bce",
     "metric"             : "mae",
+    
+    # sm
+    "backbone"           : "resnet18",
+    
+    # # cls
+    # "filters"            : [16, 32],
+    # "n_classes"          : 12,
+    # "classes"            : None,
+    # "glob_avg_pool"      : True,
+    # "regularizer"        : 0.001,
+    # "dropout"            : 0.5,
+    
+    # # aec
+    # "filters"            : [16, 32],
+    # "latent_size"        : 128,
     
     # Prepare -----------------------------------------------------------------
     
@@ -75,6 +89,7 @@ model_parameters = {
     "augment_noise_p"    : 0.0,
     "augment_flip_p"     : 0.5,
     "augment_distort_p"  : 0.5,
+    "augment_balance"    : False, # (cls)
     
     "augment_parameters" : {
         
@@ -125,49 +140,80 @@ class TrainPreview:
         if self.run_train:
             self.train()
 
-#%% Class(Train) extract_patches() --------------------------------------------
+#%% Class(TrainPreview) extract_patches() --------------------------------------
 
     def extract_patches(self):
         
-        pvw_paths = self.main.data_path.rglob("preview_raw.tif")
-        
-        for p, path in enumerate(pvw_paths):
+        for p, vws_path in enumerate(self.main.vws_paths):
             
-            pvw = io.imread(path)
-            pvw_prp = prep_preview(pvw, channels=[2, 5, 6])
-            pvw_prp = (pvw_prp * 255).astype("uint8")
+            # Log
+            t0i = time.time()
+            log_str = f"TrainPreview() : extract_patches() : {vws_path.name}"
+            print("-" * len(log_str))
+            print(log_str)
+            print("-" * len(log_str))
+            
+            # Paths
+            pvw_raw_path = vws_path / "preview_raw.tif"
+            
+            # Load ------------------------------------------------------------
+            
+            t0 = time.time()
+            pvw_raw = io.imread(pvw_raw_path)   
+            pvw_prp = prep_preview(pvw_raw, channels=[2, 5, 6])
+            
+            t1 = time.time()
+            print(f"{t1 - t0:.3f}s - load")
+            
+            # Extract patches -------------------------------------------------
+            
+            t0 = time.time()
             
             patches = extract_patches(
                 pvw_prp, 
                 self.extract_patch_size, 
                 self.extract_patch_overlap, 
                 multichannel=True
-                )
+                ) 
+            
+            t1 = time.time()
+            print(f"{t1 - t0:.3f}s - extract patches")
+            
+            # Save  -----------------------------------------------------------
+            
+            t0 = time.time()
             
             idxs = np.random.choice(
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
-            
             for idx in idxs:
                 patch_name = (
-                    f"{str(path.parent.name)}_"
+                    f"{str(vws_path.name)}_"
                     f"preview_patch_{idx:05d}.tif"
                     )
                 io.imsave(
                     self.train_path / patch_name,
-                    patches[idx], check_contrast=False,
-                    )
+                    (patches[idx] * 255).astype("uint8"), 
+                    check_contrast=False,
+                    )            
                 
-#%% Class(Train) annotate() ---------------------------------------------------
+            t1 = time.time()
+            print(f"{t1 - t0:.3f}s - save")
+                
+            t1f = time.time()
+            print(f"> {t1f - t0i:.3f}s")
+                
+#%% Class(TrainPreview) annotate() --------------------------------------------
 
     def annotate(self):
         Annotate(self.train_path)  
         
-#%% Class(Train) train() ------------------------------------------------------
+#%% Class(TrainPreview) train() -----------------------------------------------
 
     def train(self):
         
         # Load data
         msk_paths = list(self.train_path.glob("*_mask.tif"))
+        msk_paths += list((self.train_path / "stock_in").glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))

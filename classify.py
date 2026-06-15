@@ -19,7 +19,7 @@ from qtpy.QtWidgets import (
 #%% Class : Classify() --------------------------------------------------------
 
 class Classify:
-    def __init__(self, main, parameters=None):
+    def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
         for key, val in self.parameters.items():

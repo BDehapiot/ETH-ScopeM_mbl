@@ -1,12 +1,11 @@
 #%% Imports -------------------------------------------------------------------
 
-import time
 import pickle
 import numpy as np
 np.random.seed(42)
 from skimage import io
 from pathlib import Path
-from main_new_new import Main, main_parameters
+from main import Main, main_parameters
 
 # functions
 from functions import load_view, norm_data
@@ -16,15 +15,19 @@ from bdtools.model.model import Model
 from bdtools.annotate import Annotate
 from bdtools.patch import extract_patches
 
+# skimage
+from skimage.transform import rescale
+
 #%% Inputs --------------------------------------------------------------------
 
 parameters = {
     
     # Procedure ---------------------------------------------------------------
     
-    "run_patches"  : 0,
-    "run_annotate" : 0,
-    "run_train"    : 1,
+    "run_patches_0" : 0, # new
+    "run_patches_1" : 0, # from preexisting masks
+    "run_annotate"  : 0,
+    "run_train"     : 1,
     
     # Paths -------------------------------------------------------------------
     
@@ -32,9 +35,13 @@ parameters = {
     
     # Extract -----------------------------------------------------------------
     
-    "n_patches"             : 10,
+    "n_patches"             : 10, # save n_patches per preview image
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
+    
+    # Train -------------------------------------------------------------------
+    
+    "rf" : 0.5,
     
     }
 
@@ -49,33 +56,20 @@ model_parameters = {
     
     "model_type"         : "sm",
     "input_shape"        : (None, None, 1),
+    "backbone"           : "resnet18",
+    "activation"         : "sigmoid",
     "loss"               : "bce",
     "metric"             : "mae",
-    
-    # sm
-    "backbone"           : "resnet18",
-    
-    # # cls
-    # "filters"            : [16, 32],
-    # "n_classes"          : 12,
-    # "classes"            : None,
-    # "glob_avg_pool"      : True,
-    # "regularizer"        : 0.001,
-    # "dropout"            : 0.5,
-    
-    # # aec
-    # "filters"            : [16, 32],
-    # "latent_size"        : 128,
     
     # Prepare -----------------------------------------------------------------
     
     "patch_size"         : 256,
     "patch_overlap"      : 128,
-    "mask_method"        : "edt", # (sm)
+    "mask_method"        : "edt",
 
     # Train -------------------------------------------------------------------
     
-    "display"            : 1,
+    "display"            : 0,
     "epochs"             : 512,
     "batch_size"         : 32,
     "validation_split"   : 0.2,
@@ -134,8 +128,10 @@ class TrainNuclei:
                 setattr(self, key, val)
                 
         # Run
-        if self.run_patches:
-            self.extract_patches()
+        if self.run_patches_0:
+            self.extract_patches_0()
+        if self.run_patches_1:
+            self.extract_patches_1()
         if self.run_annotate:
             self.annotate()
         if self.run_train:
@@ -143,85 +139,57 @@ class TrainNuclei:
 
 #%% Class(TrainNuclei) extract_patches() --------------------------------------
 
-    def extract_patches(self):
+    def extract_patches_0(self):
+        """ to be implemented """
+        pass
+                
+    def extract_patches_1(self):
         
-        for p, vws_path in enumerate(self.main.vws_paths):
+        """Broken"""
+
+        msk_paths = list(self.train_path.glob("*_mask.tif"))
+        
+        for p, msk_path in enumerate(msk_paths):
             
-            # Log
-            t0i = time.time()
-            log_str = f"TrainNuclei() : extract_patches() : {vws_path.name}"
-            print("-" * len(log_str))
-            print(log_str)
-            print("-" * len(log_str))
-            
-            # Paths
-            mtd_path = self.main.mtd_paths[p]
+            # Parse paths
             qpt_path = self.main.qpt_paths[p]
-            pvw_sts_path = vws_path / "preview_stats.pkl"
-            roi_idx = int(vws_path.stem[-2:])
+            mtd_path = self.main.mtd_paths[p]
+            vws_path = self.main.vws_paths[p]
+            pvw_its_path = vws_path / "preview_intensities.pkl"
+            roi_idx  = int(msk_path.stem.split("_")[-5])
+            patch_idx = int(msk_path.stem.split("_")[-2])
             
-            # Load ------------------------------------------------------------
-            
-            t0 = time.time()
-            
+            print(roi_idx)
+            print(patch_idx)
+                        
+            # Load
             with open(mtd_path, "rb") as file:
                 mtd = pickle.load(file)
-            with open(pvw_sts_path, "rb") as file:
-                pvw_sts = pickle.load(file)
-            img_raw = load_view(
+            with open(pvw_its_path, "rb") as file:
+                pvw_its = pickle.load(file)
+            ncl = load_view(
                 qpt_path, metadata=mtd, channels="DAPI", 
-                level=self.main.ncl_level, roi_idx=roi_idx,
+                level=0, roi_idx=roi_idx,
                 )
+            ncl = norm_data(ncl, pvw_its, channel_idx=0)
             
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - load")
-            
-            # Normalize -------------------------------------------------------
-            
-            t0 = time.time()
-            
-            img_nrm = norm_data(img_raw, pvw_sts, channel="DAPI")
-            
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - normalize")
-            
-            # Extract patches -------------------------------------------------
-            
-            t0 = time.time()
+            # Extract patch
             
             patches = extract_patches(
-                img_nrm, 
-                self.extract_patch_size, 
-                self.extract_patch_overlap, 
-                multichannel=False
-                ) 
+                ncl, self.extract_patch_size, self.extract_patch_overlap)
             
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - extract patches")
+            print(len(patches))
             
-            # Save  -----------------------------------------------------------
+            patch = patches[patch_idx]
+            patch = (patch * 255).astype("uint8")
             
-            t0 = time.time()
-            
-            idxs = np.random.choice(
-                np.arange(0, len(patches)), size=self.n_patches, replace=False)
-            for idx in idxs:
-                patch_name = (
-                    f"{str(vws_path.name)}_"
-                    f"dapi_patch_{idx:05d}.tif"
-                    )
-                io.imsave(
-                    self.train_path / patch_name,
-                    (patches[idx] * 255).astype("uint8"), 
-                    check_contrast=False,
-                    )            
-                
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - save")
-                
-            t1f = time.time()
-            print(f"> {t1f - t0i:.3f}s")
-                                        
+            # Save
+            patch_name = str(msk_path).replace("_mask", "")
+            io.imsave(
+                self.train_path / patch_name,
+                patch, check_contrast=False,
+                )
+                            
 #%% Class(TrainNuclei) annotate() ---------------------------------------------
 
     def annotate(self):
@@ -233,7 +201,6 @@ class TrainNuclei:
         
         # Load data
         msk_paths = list(self.train_path.glob("*_mask.tif"))
-        msk_paths += list((self.train_path / "stock_in").glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))
@@ -242,9 +209,23 @@ class TrainNuclei:
                 ))
         msks = np.stack(msks)
         imgs = np.stack(imgs)
-                        
+        
+        # Rescale (optional)
+        if self.rf != 1:
+            imgs = rescale(imgs, (1, self.rf, self.rf), order=0)
+            msks = rescale(msks, (1, self.rf, self.rf), order=0)
+            self.model_parameters["patch_size"] = (
+                int(self.model_parameters["patch_size"] * self.rf))
+            self.model_parameters["patch_overlap"] = (
+                int(self.model_parameters["patch_overlap"] * self.rf))
+                
         # Normalize data
         imgs = imgs.astype("float32") / 255
+        
+        # # ///
+        # self.msks = msks
+        # self.imgs = imgs
+        # # ///
             
         # Setup model
         self.model = Model(parameters=self.model_parameters, model_path=None)
@@ -258,3 +239,16 @@ if __name__ == "__main__":
     main  = Main(parameters=main_parameters)
     train = TrainNuclei(
         main, parameters=parameters, model_parameters=model_parameters)
+    
+#%%
+    
+    # # Fetch
+    # imgs = train.imgs
+    # msks = train.msks
+        
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(imgs)
+    # vwr.add_labels(msks)
+    

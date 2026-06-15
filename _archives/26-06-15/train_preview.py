@@ -1,15 +1,13 @@
 #%% Imports -------------------------------------------------------------------
 
-import time
-import pickle
 import numpy as np
 np.random.seed(42)
 from skimage import io
 from pathlib import Path
-from main_new_new import Main, main_parameters
+from main import Main, main_parameters
 
 # functions
-from functions import load_view, norm_data
+from functions import prep_preview
 
 # bdtools
 from bdtools.model.model import Model
@@ -22,17 +20,17 @@ parameters = {
     
     # Procedure ---------------------------------------------------------------
     
-    "run_patches"  : 0,
+    "run_patches"  : 0, # new
     "run_annotate" : 0,
     "run_train"    : 1,
     
     # Paths -------------------------------------------------------------------
     
-    "train_path" : Path.cwd() / "data" / "train_asc", 
+    "train_path" : Path.cwd() / "data" / "train_preview", 
     
     # Extract -----------------------------------------------------------------
     
-    "n_patches"             : 10,
+    "n_patches"             : 10, # save n_patches per preview image
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
     
@@ -49,29 +47,16 @@ model_parameters = {
     
     "model_type"         : "sm",
     "input_shape"        : (None, None, 1),
+    "backbone"           : "resnet18",
+    "activation"         : "sigmoid",
     "loss"               : "bce",
     "metric"             : "mae",
-    
-    # sm
-    "backbone"           : "resnet18",
-    
-    # # cls
-    # "filters"            : [16, 32],
-    # "n_classes"          : 12,
-    # "classes"            : None,
-    # "glob_avg_pool"      : True,
-    # "regularizer"        : 0.001,
-    # "dropout"            : 0.5,
-    
-    # # aec
-    # "filters"            : [16, 32],
-    # "latent_size"        : 128,
     
     # Prepare -----------------------------------------------------------------
     
     "patch_size"         : 256,
     "patch_overlap"      : 128,
-    "mask_method"        : "edt", # (sm)
+    "mask_method"        : "binary",
 
     # Train -------------------------------------------------------------------
     
@@ -90,7 +75,6 @@ model_parameters = {
     "augment_noise_p"    : 0.0,
     "augment_flip_p"     : 0.5,
     "augment_distort_p"  : 0.5,
-    "augment_balance"    : False, # (cls)
     
     "augment_parameters" : {
         
@@ -121,9 +105,9 @@ model_parameters = {
 
     }
 
-#%% Class(TrainASC) -----------------------------------------------------------
+#%% Class(TrainPreview) -------------------------------------------------------
 
-class TrainASC:
+class TrainPreview:
     def __init__(self, main, parameters=None, model_parameters=None):
         self.main = main
         self.parameters = parameters
@@ -141,99 +125,49 @@ class TrainASC:
         if self.run_train:
             self.train()
 
-#%% Class(TrainASC) extract_patches() -----------------------------------------
+#%% Class(Train) extract_patches() --------------------------------------------
 
     def extract_patches(self):
         
-        for p, vws_path in enumerate(self.main.vws_paths):
+        pvw_paths = self.main.data_path.rglob("preview_raw.tif")
+        
+        for p, path in enumerate(pvw_paths):
             
-            # Log
-            t0i = time.time()
-            log_str = f"TrainASC() : extract_patches() : {vws_path.name}"
-            print("-" * len(log_str))
-            print(log_str)
-            print("-" * len(log_str))
-            
-            # Paths
-            mtd_path = self.main.mtd_paths[p]
-            qpt_path = self.main.qpt_paths[p]
-            pvw_sts_path = vws_path / "preview_stats.pkl"
-            roi_idx = int(vws_path.stem[-2:])
-            
-            # Load ------------------------------------------------------------
-            
-            t0 = time.time()
-            
-            with open(mtd_path, "rb") as file:
-                mtd = pickle.load(file)
-            with open(pvw_sts_path, "rb") as file:
-                pvw_sts = pickle.load(file)
-            img_raw = load_view(
-                qpt_path, metadata=mtd, channels="ASC", 
-                level=self.main.ncl_level, roi_idx=roi_idx,
-                )
-            
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - load")
-            
-            # Normalize -------------------------------------------------------
-            
-            t0 = time.time()
-            
-            img_nrm = norm_data(img_raw, pvw_sts, channel="ASC")
-            
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - normalize")
-            
-            # Extract patches -------------------------------------------------
-            
-            t0 = time.time()
+            pvw = io.imread(path)
+            pvw_prp = prep_preview(pvw, channels=[2, 5, 6])
+            pvw_prp = (pvw_prp * 255).astype("uint8")
             
             patches = extract_patches(
-                img_nrm, 
+                pvw_prp, 
                 self.extract_patch_size, 
                 self.extract_patch_overlap, 
-                multichannel=False
-                ) 
-            
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - extract patches")
-            
-            # Save  -----------------------------------------------------------
-            
-            t0 = time.time()
+                multichannel=True
+                )
             
             idxs = np.random.choice(
                 np.arange(0, len(patches)), size=self.n_patches, replace=False)
+            
             for idx in idxs:
                 patch_name = (
-                    f"{str(vws_path.name)}_"
-                    f"asc_patch_{idx:05d}.tif"
+                    f"{str(path.parent.name)}_"
+                    f"preview_patch_{idx:05d}.tif"
                     )
                 io.imsave(
                     self.train_path / patch_name,
-                    (patches[idx] * 255).astype("uint8"), 
-                    check_contrast=False,
-                    )            
+                    patches[idx], check_contrast=False,
+                    )
                 
-            t1 = time.time()
-            print(f"{t1 - t0:.3f}s - save")
-                
-            t1f = time.time()
-            print(f"> {t1f - t0i:.3f}s")
-                                        
-#%% Class(TrainASC) annotate() ------------------------------------------------
+#%% Class(Train) annotate() ---------------------------------------------------
 
     def annotate(self):
         Annotate(self.train_path)  
         
-#%% Class(TrainASC) train() ---------------------------------------------------
-    
+#%% Class(Train) train() ------------------------------------------------------
+
     def train(self):
         
         # Load data
         msk_paths = list(self.train_path.glob("*_mask.tif"))
-        msk_paths += list((self.train_path / "stock_in").glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))
@@ -242,7 +176,7 @@ class TrainASC:
                 ))
         msks = np.stack(msks)
         imgs = np.stack(imgs)
-                        
+            
         # Normalize data
         imgs = imgs.astype("float32") / 255
             
@@ -256,5 +190,5 @@ class TrainASC:
 
 if __name__ == "__main__":
     main  = Main(parameters=main_parameters)
-    train = TrainASC(
+    train = TrainPreview(
         main, parameters=parameters, model_parameters=model_parameters)

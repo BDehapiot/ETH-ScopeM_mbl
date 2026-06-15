@@ -3,7 +3,8 @@
 import napari
 import pickle
 import numpy as np
-from main import Main, main_parameters
+from skimage import io
+from main_new import Main, main_parameters
 
 # functions
 from functions import load_compressed_stack
@@ -73,7 +74,7 @@ class Display:
         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
         ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
         ncl_plt_path = vws_path / "nuclei_plot.png"
-        stk_nrm_path = vws_path / "stack_norm.npz"
+        stk_nrm_path = vws_path / "stack_norm.tif"
         
         # Load
         with open(mtd_path, "rb") as file:
@@ -91,7 +92,7 @@ class Display:
         self.ncl_plt = QPixmap(str(ncl_plt_path))
         self.ncl_plt = self.ncl_plt.scaledToWidth(
             int(self.dock_width / 1.75), Qt.SmoothTransformation)
-        self.stk_nrm = load_compressed_stack(stk_nrm_path)
+        self.stk_nrm = io.imread(stk_nrm_path)
 
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 
