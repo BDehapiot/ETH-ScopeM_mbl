@@ -5,13 +5,13 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
-from joblib import Parallel, delayed
 
 # bdtools
 from bdtools.conn import lbl_conn
 from bdtools.norm import norm_pct
 
 # skimage
+from skimage.transform import rescale
 from skimage.segmentation import watershed
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
@@ -239,7 +239,7 @@ def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
     
 #%% function(s) : nuclei segmentation -----------------------------------------
     
-def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=1):
+def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
     msk_0 = ncl_prd > thresh_0
     msk_1 = ncl_prd > thresh_1
     msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
@@ -250,7 +250,7 @@ def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=1):
     msk = remove_small_objects(msk, min_size=min_size)
     return msk > 0
 
-def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=1):
+def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=0):
     props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
     y, x = props["centroid-0"], props["centroid-1"]
     ctd = {"y" : [], "x" : []}
@@ -259,6 +259,15 @@ def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=1):
         ctd["y"].append(y * factor)
         ctd["x"].append(x * factor)
     return ctd
+
+#%% function(s) : get_processed_asc() -----------------------------------------
+
+def get_processed_asc(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
+    asc_msk = asc_prd > thresh
+    asc_nrm[~asc_msk] = 0 
+    factor = 2 ** (stk_level - asc_level)
+    asc_nrm = rescale(asc_nrm, 1 / factor)
+    return asc_nrm
 
 #%% function(s) : crops -------------------------------------------------------
 
@@ -433,7 +442,7 @@ def plot(df, dfa, dfn, dfan, channels, classes, colors):
             dfs = dfan if merged else dfn
         
         for cl, cla in enumerate(classes):
-            vals = dfs[dfs["class"] == cla][measure]
+            vals = np.array(dfs[dfs["class"] == cla][measure])
             _plot(ax, vals, cl, colors[cl], merged=merged)
             
         # Legend

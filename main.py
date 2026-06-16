@@ -13,9 +13,9 @@ from pathlib import Path
 from functions import (
     prep_preview, norm_12_to_8bits, norm_data, 
     get_slide_metadata, load_view, 
-    get_nuclei_mask, get_nuclei_centroids, 
     save_compressed_stack, load_compressed_stack,
     save_compressed_mask, load_compressed_mask,
+    get_nuclei_mask, get_nuclei_centroids, get_processed_asc,
     get_crops, prepare_crops,
     get_preview_stats, format_preview_stats,
     get_nuclei_stats, format_nuclei_stats,
@@ -35,10 +35,10 @@ main_parameters = {
     # Procedure
     "force_extract"         : 1,
     "force_predict_nuclei"  : 1,
-    "force_predict_asc"     : 0,
-    "force_predict_classes" : 0,
-    "force_measure"         : 0,
-    "force_analyse"         : 0,
+    "force_predict_asc"     : 1,
+    "force_predict_classes" : 1,
+    "force_measure"         : 1,
+    "force_analyse"         : 1,
     
     # Paths
     "data_path" : Path("D:\local_mbl\data"),
@@ -48,17 +48,18 @@ main_parameters = {
     "model_classes_name" : "model-cls_12_2_6_5045-8190b",
     
     # extract()
-    "pvw_level" : 4,
-    "stk_level" : 1,
+    "pvw_level"     : 4,
+    "stk_level"     : 1,
         
     # predict()
-    "ncl_level" : 0,
-    "asc_level" : 0,
-    "thresh_0"  : 0.25,
-    "thresh_1"  : 0.50,
+    "ncl_level"     : 0,
+    "ncl_thresh_0"  : 0.25,
+    "ncl_thresh_1"  : 0.50,
+    "asc_level"     : 0,
+    "asc_thresh"    : 0.05,
     
     # Measure()
-    "crop_size" : 32,
+    "crop_size"     : 32,
     
     # Maps  -------------------------------------------------------------------
     
@@ -272,8 +273,7 @@ class Main:
                 t0 = time.time()
 
                 ncl_prd = model_nuclei.predict(
-                    ncl_nrm, patch_overlap=32, batch_size=32, chunk_size=5000, 
-                    )
+                    ncl_nrm, patch_overlap=32, batch_size=32, chunk_size=5000)
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - predict")
@@ -284,8 +284,8 @@ class Main:
     
                 ncl_msk = get_nuclei_mask(
                     ncl_prd, 
-                    thresh_0=self.thresh_0, 
-                    thresh_1=self.thresh_1, 
+                    thresh_0=self.ncl_thresh_0, 
+                    thresh_1=self.ncl_thresh_1, 
                     ncl_level=self.ncl_level,
                     )
                 
@@ -333,14 +333,12 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
-            asc_msk_path = vws_path / "asc_mask.tif"
+            asc_prc_path = vws_path / "asc_processed.tif"
             roi_idx = int(vws_path.stem[-2:])
             
-            # if ((self.force_predict_asc > 0 and not asc_msk_path.exists()) 
-            #     or self.force_predict_asc == 2):
-                
-            if p == 0:
-                
+            if ((self.force_predict_asc > 0 and not asc_prc_path.exists()) 
+                or self.force_predict_asc == 2):
+                                
                 # Log
                 t0i = time.time()
                 log_str = f"Main() : predict_asc() : {vws_path.name}"
@@ -376,28 +374,46 @@ class Main:
                 t0 = time.time()
 
                 asc_prd = model_asc.predict(
-                    asc_nrm, patch_overlap=32, batch_size=32, chunk_size=5000, 
-                    )
-                self.asc_prd = asc_prd
-                
+                    asc_nrm, patch_overlap=32, batch_size=32, chunk_size=5000)
+                                
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - predict")
     
-                # Get mask ----------------------------------------------------
+                # Process -----------------------------------------------------
     
                 t0 = time.time()
     
-                # asc_msk = get_nuclei_mask(
-                #     ncl_prd, 
-                #     thresh_0=self.thresh_0, 
-                #     thresh_1=self.thresh_1, 
-                #     ncl_level=self.ncl_level,
-                #     )
+                asc_prc = get_processed_asc(
+                    asc_nrm, asc_prd,
+                    thresh=self.asc_thresh,
+                    asc_level=self.asc_level, 
+                    stk_level=self.stk_level,
+                    )
+                    
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - process")   
+                
+                # Save --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                io.imsave(
+                    asc_prc_path, 
+                    (asc_prc * 255).astype("uint8"),
+                    check_contrast=False,
+                    )
+                
+                # Clear
+                del asc_raw, asc_nrm, asc_prd, asc_prc
+                tf.keras.backend.clear_session()
+                gc.collect()
                 
                 t1 = time.time()
-                print(f"{t1 - t0:.3f}s - get mask")
-            
-            
+                print(f"{t1 - t0:.3f}s - save")
+                
+                t1f = time.time()
+                print(f"> {t1f - t0i:.3f}s")
+                
                 
 #%% Class(Main) : predict_classes() -------------------------------------------
             
@@ -493,7 +509,8 @@ class Main:
 
             # Paths
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-            stk_nrm_path = vws_path / "stack_norm.tif"    
+            stk_nrm_path = vws_path / "stack_norm.tif"  
+            asc_prc_path = vws_path / "asc_processed.tif"
             ncl_sts_path = vws_path / "nuclei_stats.pkl"
 
             if ((self.force_measure > 0 and not ncl_sts_path.exists()) 
@@ -512,7 +529,9 @@ class Main:
 
                 with open(ncl_ctd_path, "rb") as file:
                     ncl_ctd = pickle.load(file)
-                stk_nrm = stk_nrm = io.imread(stk_nrm_path)
+                stk_nrm = io.imread(stk_nrm_path)
+                asc_prc = io.imread(asc_prc_path)
+                stk_nrm[4, ...] = asc_prc # replace asc channel
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
@@ -684,5 +703,49 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    asc_prd = main.asc_prd
+    
+#%%
+    
+    # Imports
+    from scipy.ndimage import distance_transform_edt
+    
+    # Path
+    vws_idx = 0
+    vws_path = main.vws_paths[vws_idx]
+    ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+    ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+    asc_prc_path = vws_path / "asc_processed.tif"
+    
+    # Load
+    with open(ncl_ctd_path, "rb") as file:
+        ncl_ctd = pickle.load(file)
+    with open(ncl_prd_path, "rb") as file:
+        ncl_prd = pickle.load(file)
+    asc_prc = io.imread(asc_prc_path)
+    
+    # Process
+    asc_msk = asc_prc > 0
+    asc_edt = distance_transform_edt(~asc_msk)
+    
+    # Measure
+    coords = (
+        ncl_ctd["y"][main.stk_level].astype(int), 
+        ncl_ctd["x"][main.stk_level].astype(int),
+        )
+    asc_dst = asc_edt[coords]
+    
+    # analyse
+    max_dst = 10
+    sub_prd = ncl_prd[asc_dst < max_dst]
+    _, counts0 = np.unique(ncl_prd, return_counts=True)
+    _, counts1 = np.unique(sub_prd, return_counts=True)
+    counts0 = counts0.astype("float32") / np.sum(counts0)
+    counts1 = counts1.astype("float32") / np.sum(counts1)
+    
+    
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(asc_edt)
+    
     

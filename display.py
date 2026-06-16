@@ -4,7 +4,7 @@ import napari
 import pickle
 import numpy as np
 from skimage import io
-from main_new import Main, main_parameters
+from main import Main, main_parameters
 
 # functions
 from functions import load_compressed_stack
