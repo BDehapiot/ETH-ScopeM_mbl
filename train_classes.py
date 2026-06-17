@@ -9,7 +9,7 @@ from main import Main, main_parameters
 
 # functions
 from functions import (
-    get_crops, prepare_crops, 
+    get_crops, get_crops_processed, 
     save_compressed_stack, load_compressed_stack
     )
 
@@ -248,13 +248,13 @@ class TrainClasses:
         
         # Prepare data
         ncl_cls = ncl_cls - 1 # class 1 (other) = 0
-        crp_nrm = prepare_crops(crp_nrm)
+        crp_prc = get_crops_processed(crp_nrm)
         
         # Setup model
         self.model = Model(parameters=self.model_parameters, model_path=None)
         
         # Train model
-        self.model.train(crp_nrm, y=ncl_cls)
+        self.model.train(crp_prc, y=ncl_cls)
             
 #%% Execute -------------------------------------------------------------------
 

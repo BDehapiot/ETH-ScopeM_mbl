@@ -8,7 +8,7 @@ from pathlib import Path
 from main import Main, main_parameters
 
 # functions
-from functions import prep_preview
+from functions import get_preview_processed
 
 # bdtools
 from bdtools.model.model import Model
@@ -160,7 +160,7 @@ class TrainPreview:
             
             t0 = time.time()
             pvw_raw = io.imread(pvw_raw_path)   
-            pvw_prp = prep_preview(pvw_raw, channels=[2, 5, 6])
+            pvw_prp = get_preview_processed(pvw_raw, channels=[2, 5, 6])
             
             t1 = time.time()
             print(f"{t1 - t0:.3f}s - load")

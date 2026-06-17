@@ -16,6 +16,9 @@ from skimage.segmentation import watershed
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
+
+# scipy
+from scipy.ndimage import distance_transform_edt
        
 #%% function(s) : compression -------------------------------------------------
 
@@ -54,10 +57,6 @@ def norm_pct_8bits(arr):
         for i, img in enumerate(arr):
             arr[i] = (norm_pct(img) * 255).astype("uint8")
         return arr   
-    
-def prep_preview(pvw_raw, channels=[2, 5, 6]):
-    return np.mean(
-        norm_pct(pvw_raw)[channels, ...], axis=0).astype("float32") 
 
 def norm_data(arr, pvw_sts, channel=None):
     
@@ -85,28 +84,6 @@ def norm_data(arr, pvw_sts, channel=None):
             arr[c] = norm_pct(arr[c], sample_fraction=0.1)
     
     return arr
-
-#%% function(s) : get_patches() -----------------------------------------------
-
-# def get_patches(vws_paths, ):
-#     if paths[0].suffix = 
-#     pass
-
-#%% function(s) : pad_images() ------------------------------------------------
-
-def pad_images(imgs):
-    imgs_padded = []
-    max_y = np.max([img.shape[0] for img in imgs])
-    max_x = np.max([img.shape[1] for img in imgs])
-    for img in imgs:
-        pad_y = max_y - img.shape[0]
-        pad_x = max_x - img.shape[1]
-        top, bottom = pad_y // 2, pad_y - (pad_y // 2)
-        left, right = pad_x // 2, pad_x - (pad_x // 2)
-        padding = ((top, bottom), (left, right))
-        imgs_padded.append(
-            np.pad(img, padding, mode="constant", constant_values=0))
-    return imgs_padded
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -236,38 +213,23 @@ def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
                 
     return np.stack(arr).squeeze()
 
-    
-#%% function(s) : nuclei segmentation -----------------------------------------
-    
-def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
-    msk_0 = ncl_prd > thresh_0
-    msk_1 = ncl_prd > thresh_1
-    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
-    msk[lbl_conn(msk, conn=2) == 2] = 0
-    if ncl_level == 0: min_size = 8
-    if ncl_level == 1: min_size = 2
-    if ncl_level >= 2: min_size = 1
-    msk = remove_small_objects(msk, min_size=min_size)
-    return msk > 0
+#%% function(s) : preview -----------------------------------------------------
 
-def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=0):
-    props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
-    y, x = props["centroid-0"], props["centroid-1"]
-    ctd = {"y" : [], "x" : []}
-    for level in range(n_levels):
-        factor = 2 ** (ncl_level - level)
-        ctd["y"].append(y * factor)
-        ctd["x"].append(x * factor)
-    return ctd
+def get_preview_processed(pvw_raw, channels=[2, 5, 6]):
+    pvw_prc = np.mean(
+        norm_pct(pvw_raw)[channels, ...], axis=0).astype("float32") 
+    return pvw_prc
 
-#%% function(s) : get_processed_asc() -----------------------------------------
+def get_preview_stats(pvw_raw, pvw_msk, channels):
+    pvw_msk = pvw_msk > 0
+    pvw_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+    return pvw_sts
 
-def get_processed_asc(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
-    asc_msk = asc_prd > thresh
-    asc_nrm[~asc_msk] = 0 
-    factor = 2 ** (stk_level - asc_level)
-    asc_nrm = rescale(asc_nrm, 1 / factor)
-    return asc_nrm
+def format_preview_stats():
+    pass
 
 #%% function(s) : crops -------------------------------------------------------
 
@@ -303,24 +265,34 @@ def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
         
     return np.stack(crops)
 
-def prepare_crops(crp):
-    crp = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
-    crp = np.transpose(crp, (0, 2, 3, 1)) # transposition
-    crp = crp.astype("float32") / 255 # normalize
-    return crp
+def get_crops_processed(crp):
+    crp_prc = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
+    crp_prc = np.transpose(crp_prc, (0, 2, 3, 1)) # transposition
+    crp_prc = crp_prc.astype("float32") / 255 # normalize
+    return crp_prc
+    
+#%% function(s) : nuclei  -----------------------------------------------------
+    
+def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
+    msk_0 = ncl_prd > thresh_0
+    msk_1 = ncl_prd > thresh_1
+    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
+    msk[lbl_conn(msk, conn=2) == 2] = 0
+    if ncl_level == 0: min_size = 8
+    if ncl_level == 1: min_size = 2
+    if ncl_level >= 2: min_size = 1
+    msk = remove_small_objects(msk, min_size=min_size)
+    return msk > 0
 
-#%% function(s) : statistics --------------------------------------------------
-
-def get_preview_stats(pvw_raw, pvw_msk, channels):
-    pvw_msk = pvw_msk > 0
-    pvw_sts = {"avg" : {}, "std" : {}}
-    for c, chn in enumerate(channels):
-        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
-        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
-    return pvw_sts
-
-def format_preview_stats():
-    pass
+def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=0):
+    props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
+    y, x = props["centroid-0"], props["centroid-1"]
+    ctd = {"y" : [], "x" : []}
+    for level in range(n_levels):
+        factor = 2 ** (ncl_level - level)
+        ctd["y"].append(y * factor)
+        ctd["x"].append(x * factor)
+    return ctd
 
 def get_nuclei_stats(crp, channels):        
     ncl_sts = {"avg" : {}, "std" : {}}
@@ -330,11 +302,9 @@ def get_nuclei_stats(crp, channels):
     return ncl_sts
 
 def format_nuclei_stats(
-        ncl_prd, ncl_ent, ncl_sts, vws_path, 
-        channels, classes
-        ):
-    
-    # Nested function(s) ------------------------------------------------------
+    ncl_prd, ncl_ent, ncl_sts, vws_path, 
+    channels, classes
+    ):
     
     def mean_norm(df):
         dfn = df.copy()
@@ -352,8 +322,6 @@ def format_nuclei_stats(
         dfa = dfa.reset_index()
         dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
         return dfa
-    
-    # Execute -----------------------------------------------------------------
     
     # Extrat data
     ncl_df = pd.DataFrame()
@@ -373,7 +341,65 @@ def format_nuclei_stats(
         
     return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
 
-#%% function(s) : Plots -------------------------------------------------------
+#%% function(s) : asc ---------------------------------------------------------
+
+def get_asc_processed(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
+    asc_msk = asc_prd > thresh
+    asc_prc = asc_nrm.copy()
+    asc_prc[~asc_msk] = 0 
+    factor = 2 ** (stk_level - asc_level)
+    asc_prc = rescale(asc_prc, 1 / factor)
+    return asc_prc
+
+def get_asc_distances(asc_prc, ncl_ctd, classes, stk_level=1):
+            
+    # Get edt
+    asc_msk = asc_prc > 0
+    asc_edt = distance_transform_edt(~asc_msk)
+    
+    # Get asc distances
+    coords = (
+        ncl_ctd["y"][stk_level].astype(int), 
+        ncl_ctd["x"][stk_level].astype(int),
+        )
+    asc_dst = asc_edt[coords]
+    
+    # Scale acc. to stk_level
+    asc_dst *= 2 ** stk_level
+    
+    return asc_dst
+    
+def format_asc_distances(
+        asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
+    
+    def get_counts(ncl_prd, normalized=False):
+        _, counts = np.unique(ncl_prd, return_counts=True)
+        if normalized:
+            counts = counts.astype("float32") / np.sum(counts)
+        return counts
+    
+    # Get bins
+    bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+    
+    # Count nuclei class
+    counts_raw = []
+    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=True))
+    for d, dst in enumerate(bins):
+        dst0 = 0 if d == 0 else bins[d - 1]
+        ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
+        counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+    counts_raw = np.stack(counts_raw)
+    counts_nrm = counts_raw / counts_all_nrm
+    
+    # Get dataframe
+    asc_df = pd.DataFrame(counts_raw, columns=classes)
+    asc_df.insert(0, "Distance", bins)
+    asc_dfn = pd.DataFrame(counts_nrm, columns=classes)
+    asc_dfn.insert(0, "Distance", bins)
+    
+    return asc_df, asc_dfn
+
+#%% function(s) : plots -------------------------------------------------------
 
 def plot(df, dfa, dfn, dfan, channels, classes, colors):
     
@@ -484,3 +510,19 @@ def plot(df, dfa, dfn, dfan, channels, classes, colors):
     plt.ion()
 
     return fig
+
+#%% function(s) : pad_images() ------------------------------------------------
+
+def pad_images(imgs):
+    imgs_padded = []
+    max_y = np.max([img.shape[0] for img in imgs])
+    max_x = np.max([img.shape[1] for img in imgs])
+    for img in imgs:
+        pad_y = max_y - img.shape[0]
+        pad_x = max_x - img.shape[1]
+        top, bottom = pad_y // 2, pad_y - (pad_y // 2)
+        left, right = pad_x // 2, pad_x - (pad_x // 2)
+        padding = ((top, bottom), (left, right))
+        imgs_padded.append(
+            np.pad(img, padding, mode="constant", constant_values=0))
+    return imgs_padded
