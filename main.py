@@ -36,10 +36,10 @@ main_parameters = {
     "force_predict_asc"     : 1,
     "force_predict_classes" : 1,
     "force_measure"         : 1,
-    "force_analyse"         : 2,
+    "force_analyse"         : 1,
     
     # Paths
-    "data_path" : Path("D:\local_mbl\data"),
+    "data_path"          : Path("D:\local_mbl\data"),
     "model_preview_name" : "model-sm_preview_256_binary_227-1024",
     "model_nuclei_name"  : "model-sm_nuclei_256_edt_192-1024",
     "model_asc_name"     : "model-sm_asc_256_edt_243-1024",
@@ -57,11 +57,11 @@ main_parameters = {
     "asc_thresh"    : 0.05,
     
     # Measure()
-    "crop_size"     : 64,  # in pixels at stk_level = 0
+    "crop_size"     : 64, # in pixels at stk_level = 0
     
     # Analyse()
-    "asc_bin_size"  : 10,  # in pixels at stk_level = 0
-    "asc_bin_max"   : 200, # in pixels at stk_level = 0
+    "asc_bin_size"  : 4,  # in pixels at stk_level = 0
+    "asc_bin_max"   : 64, # in pixels at stk_level = 0
     
     # Maps  -------------------------------------------------------------------
     
@@ -748,48 +748,217 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    
+        
 #%%
     
-    # # Path
-    # vws_idx = 0
-    # vws_path = main.vws_paths[vws_idx]
-    # ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-    # ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-    # asc_prc_path = vws_path / "asc_processed.tif"
+    # Path
+    merged = False
+    if merged:
+        ncl_df_path = main.data_path / "merged_nuclei_df.csv"
+        ncl_dfa_path = main.data_path / "merged_nuclei_dfa.csv"
+        ncl_dfn_path = main.data_path / "merged_nuclei_dfn.csv"
+        ncl_dfan_path = main.data_path / "merged_nuclei_dfan.csv"
+        asc_df_path = main.data_path / "averaged_asc_df.csv"
+        asc_dfn_path = main.data_path / "averaged_asc_dfn.csv"
+    else:
+        vws_idx = 0
+        vws_path = main.vws_paths[vws_idx]
+        ncl_df_path = vws_path / "nuclei_df.csv"
+        ncl_dfa_path = vws_path / "nuclei_dfa.csv"
+        ncl_dfn_path = vws_path / "nuclei_dfn.csv"
+        ncl_dfan_path = vws_path / "nuclei_dfan.csv"
+        asc_df_path = vws_path / "asc_df.csv"
+        asc_dfn_path = vws_path / "asc_dfn.csv"
     
-    # # Load
-    # with open(ncl_ctd_path, "rb") as file:
-    #     ncl_ctd = pickle.load(file)
-    # with open(ncl_prd_path, "rb") as file:
-    #     ncl_prd = pickle.load(file)
-    # asc_prc = io.imread(asc_prc_path)
+    # Load
+    ncl_df = pd.read_csv(ncl_df_path)
+    ncl_dfa = pd.read_csv(ncl_dfa_path)
+    ncl_dfn = pd.read_csv(ncl_dfn_path)
+    ncl_dfan = pd.read_csv(ncl_dfan_path)
+    asc_df = pd.read_csv(asc_df_path)
+    asc_dfn = pd.read_csv(asc_dfn_path)
     
-    # asc_dst = get_asc_distances(
-    #     asc_prc, ncl_ctd, main.classes,
-    #     stk_level=main.stk_level
-    #     )
-    
-    # asc_df, asc_dfn = format_asc_distances(
-    #     asc_dst, ncl_prd, main.classes,
-    #     bin_size=main.asc_bin_size, bin_max=main.asc_bin_max
-    #     )
-        
 #%%
 
+    # Imports
+    import matplotlib.pyplot as plt
+
+    # -------------------------------------------------------------------------
+
+    # def plot(
+    #     ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, asc_df, asc_dfn,
+    #     channels, classes, colors
+    #     ):
+        
+    # Inputs --------------------------------------------------------------
+    
+    gcolor = "0.5"
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = ncl_df["view"].nunique(dropna=False) > 1
+    
+    # Nested function(s) --------------------------------------------------
+    
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    
+    def _boxplot(ax, vals, idx, color, merged=False):
+                    
+        # Boxplot
+        ax.boxplot(
+            vals, positions=[idx], widths=0.5, patch_artist=True,
+            boxprops=dict(color=gcolor, facecolor="none", linewidth=1),
+            medianprops=dict(color=color, linewidth=2),
+            whiskerprops=dict(color=gcolor, linewidth=1),
+            capprops=dict(color=gcolor, linewidth=1),
+            showfliers=False
+            )
+        
+        # Mean line
+        ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
+        
+        # x grid
+        ax.grid(axis="x", linestyle=":", alpha=0.6, color=gcolor)
+        
+    def _barplot(ax, avg, idx, color, err=None):
+        
+        # Barplot
+        ax.bar(idx, avg, width=0.5, capsize=5, color=color)
+        
+        if not err is None:
+            yerr = np.vstack([np.zeros_like(avg), err])
+            ax.errorbar(
+                idx, avg, yerr=yerr,
+                capsize=5, elinewidth=0.5, ecolor=gcolor, fmt="none",
+                )
+        
+        # x grid
+        ax.grid(axis="x", linestyle=":", alpha=0.6, color=gcolor)
+        
+    def _lineplot():
+        pass
+    
+    # Execute -----------------------------------------------------------------
+    
+    # plt.ioff()
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(7, 10))
+    axes = axes.flatten()
+    
+    # (0 - 5) Channel intensities ---------------------------------------------
+    
+    for cl, cla in enumerate(main.classes):
+
+        ax = axes[cl]                   
+        dfs = ncl_dfan if merged else ncl_dfn
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(dfs[dfs["class"] == cla][f"{chn}_avg"])
+            _boxplot(ax, vals, ch, main.colors[cl], merged=merged)
+                    
+        # Legend
+        _ylim(ax)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        ax.set_title(cla, pad=10)
+    
+    # (6) Class relative frequency --------------------------------------------
+    
+    ax = axes[6]
+    dfs = ncl_dfan
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(main.classes):
+        avg.append(dfs[dfs["class"] == cla]["count"].mean())
+        std.append(dfs[dfs["class"] == cla]["count"].std())
+        sem.append(dfs[dfs["class"] == cla]["count"].sem())
+    if merged:
+        _barplot(ax, avg, sclasses, main.colors, err=sem)
+    else:
+        _barplot(ax, avg, sclasses, main.colors, err=None)
+    
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class relative freq.", pad=10)
+    
+    # (7) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[7]
+    dfs = ncl_dfan if merged else ncl_dfn
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(main.classes):
+        avg.append(dfs[dfs["class"] == cla]["ASC_avg"].mean())
+        std.append(dfs[dfs["class"] == cla]["ASC_avg"].std())
+        sem.append(dfs[dfs["class"] == cla]["ASC_avg"].sem())
+    _barplot(ax, avg, sclasses, main.colors, err=sem)
+        
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class ASC int.", pad=10)
+    
+    # (8) Class relative ASC --------------------------------------------------
+    
+    ax = axes[8]
+    dfs = asc_dfn
+    
+    for cl, cla in enumerate(main.classes):
+        ax.plot(dfs["distances"], dfs[cla], color=main.colors[cl], label=cla)
+        
+    # Legend
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    # ax.set_title("ASC int.", pad=10)
+    
+    # ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    # ax.set_title("Class ASC int.", pad=10)
+    # ax.set_xticks(np.arange(0, len(sclasses)))
+    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    # plt.close(fig) 
+    # plt.ion()
+        
+    # -------------------------------------------------------------------------
+    
+    # plot(
+    #     ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, asc_df, asc_dfn,
+    #     main.channels, main.classes, main.colors,
+    #     )
+        
+    
+            
+#%%
+
+    # # Imports
     # import matplotlib.pyplot as plt
         
-    # # plot
-    
+    # # Parameters
     # gcolor = "0.5"
     
-    # fig, ax = plt.subplots(figsize=(6, 6))
+    # # Initialize data
+    # df = asc_dfn
+    
+    # # Initialize plot
+    # fig, axes = plt.subplots(nrows=1, ncols=2, figsize=(7, 7))
+    # axes = axes.flatten()
     
     # for cl, cla in enumerate(main.classes):
-    #     ax.plot(bins, counts_rel[:, cl], color=main.colors[cl], label=cla)
+    #     ax.plot(
+    #         df["distances"], df[cla],
+    #         color=main.colors[cl], label=cla
+    #         )
     
-    # # Mean line
-    # ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
+    # # # Mean line
+    # # ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
         
     # # Legend
     # ax.set_ylabel("Ratio")

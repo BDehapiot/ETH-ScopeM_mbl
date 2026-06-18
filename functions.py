@@ -383,19 +383,19 @@ def format_asc_distances(
     
     # Count nuclei class
     counts_raw = []
-    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=True))
+    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=False))
     for d, dst in enumerate(bins):
         dst0 = 0 if d == 0 else bins[d - 1]
         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
-        counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+        counts_raw.append(get_counts(ncl_prd_dst, normalized=False))
     counts_raw = np.stack(counts_raw)
     counts_nrm = counts_raw / counts_all_nrm
     
     # Get dataframe
     asc_df = pd.DataFrame(counts_raw, columns=classes)
-    asc_df.insert(0, "Distance", bins)
+    asc_df.insert(0, "distances", bins)
     asc_dfn = pd.DataFrame(counts_nrm, columns=classes)
-    asc_dfn.insert(0, "Distance", bins)
+    asc_dfn.insert(0, "distances", bins)
     
     return asc_df, asc_dfn
 
