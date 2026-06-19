@@ -6,9 +6,6 @@ import numpy as np
 from skimage import io
 from main import Main, main_parameters
 
-# functions
-from functions import load_compressed_stack
-
 # Qt
 from qtpy.QtCore import Qt
 from qtpy.QtGui import QPixmap

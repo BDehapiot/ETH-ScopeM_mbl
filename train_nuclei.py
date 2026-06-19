@@ -75,7 +75,7 @@ model_parameters = {
 
     # Train -------------------------------------------------------------------
     
-    "display"            : 1,
+    "display"            : 0,
     "epochs"             : 512,
     "batch_size"         : 32,
     "validation_split"   : 0.2,

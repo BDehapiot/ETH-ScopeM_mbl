@@ -271,7 +271,7 @@ def get_crops_processed(crp):
     crp_prc = crp_prc.astype("float32") / 255 # normalize
     return crp_prc
     
-#%% function(s) : nuclei  -----------------------------------------------------
+#%% function(s) : nuclei ------------------------------------------------------
     
 def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
     msk_0 = ncl_prd > thresh_0
@@ -351,6 +351,26 @@ def get_asc_processed(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
     asc_prc = rescale(asc_prc, 1 / factor)
     return asc_prc
 
+def get_asc_stats(pvw_msk, asc_prc, pvw_level=4, stk_level=1):
+    asc_sts = {}
+    pvw_factor = (2 ** pvw_level) ** 2
+    asc_factor = (2 ** stk_level) ** 2
+    pvw_area = np.sum(pvw_msk > 0) * pvw_factor
+    asc_area = np.sum(asc_prc > 0) * asc_factor
+    asc_int = np.sum(asc_prc) * asc_factor
+    asc_area_nrm = asc_area / pvw_area
+    asc_int_nrm = asc_int  / pvw_area
+    asc_sts["area"] = asc_area
+    asc_sts["int"] = asc_int
+    asc_sts["area_nrm"] = asc_area_nrm
+    asc_sts["int_nrm"] = asc_int_nrm
+    return asc_sts
+
+def format_asc_stats(asc_sts, vws_path):
+    asc_sts_df = pd.DataFrame([asc_sts])
+    asc_sts_df.insert(0, "view", vws_path.name)
+    return asc_sts_df
+
 def get_asc_distances(asc_prc, ncl_ctd, classes, stk_level=1):
             
     # Get edt
@@ -382,73 +402,164 @@ def format_asc_distances(
     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
     
     # Count nuclei class
-    counts_raw = []
-    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=False))
+    counts_raw, counts_nrm = [], []
+    counts_all_raw = np.stack(get_counts(ncl_prd, normalized=False))
+    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=True))
     for d, dst in enumerate(bins):
         dst0 = 0 if d == 0 else bins[d - 1]
         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
         counts_raw.append(get_counts(ncl_prd_dst, normalized=False))
-    counts_raw = np.stack(counts_raw)
-    counts_nrm = counts_raw / counts_all_nrm
+        counts_nrm.append(get_counts(ncl_prd_dst, normalized=True))
+    counts_raw = counts_raw / counts_all_raw
+    counts_nrm = counts_nrm / counts_all_nrm
     
     # Get dataframe
-    asc_df = pd.DataFrame(counts_raw, columns=classes)
-    asc_df.insert(0, "distances", bins)
-    asc_dfn = pd.DataFrame(counts_nrm, columns=classes)
-    asc_dfn.insert(0, "distances", bins)
+    asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
+    asc_dst_df.insert(0, "distances", bins)
+    asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
+    asc_dst_dfn.insert(0, "distances", bins)
     
-    return asc_df, asc_dfn
+    return asc_dst_df, asc_dst_dfn
 
 #%% function(s) : plots -------------------------------------------------------
 
-def plot(df, dfa, dfn, dfan, channels, classes, colors):
+def plot(
+    ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, asc_dst_df, asc_dst_dfn,
+    asc_bin_size, asc_bin_max, 
+    channels, classes, colors
+    ):
     
     # Inputs ------------------------------------------------------------------
     
-    plt.ioff()
-    gcolor = "0.5"
     schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
     sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-    merged = df["view"].nunique(dropna=False) > 1
+    merged = ncl_df["view"].nunique(dropna=False) > 1
+    
+    hline_params = {
+        "y" : 1, "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":",
+        }
+    
+    grid_params = {
+        "axis" : "x", "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":", 
+        }
     
     # Nested function(s) ------------------------------------------------------
-    
+        
     def _ylim(ax, min_ymax=6):
         _, ymax = ax.get_ylim()
         ax.set_ylim(0, np.maximum(min_ymax, ymax))
-    
-    def _plot(ax, vals, idx, color, merged=False):
-                    
-        # Boxplot
+        
+    def _boxplot(ax, vals, x, color, merged=False):
         ax.boxplot(
-            vals, positions=[idx], widths=0.5, patch_artist=True,
-            boxprops=dict(color=gcolor, facecolor="none", linewidth=1),
+            vals, positions=[x], widths=0.5, patch_artist=True,
+            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
             medianprops=dict(color=color, linewidth=2),
-            whiskerprops=dict(color=gcolor, linewidth=1),
-            capprops=dict(color=gcolor, linewidth=1),
-            showfliers=False
+            whiskerprops=dict(color="0.5", linewidth=1),
+            capprops=dict(color="0.5", linewidth=1),
+            showfliers=False,
             )
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
         
-        # Mean line
-        ax.axhline(y=1, color=gcolor, linestyle=":", linewidth=1)
-        
-        # x grid
-        ax.grid(axis="x", linestyle=":", alpha=0.6, color=gcolor)
+    def _barplot(ax, avg, x, color, err=None):
+        ax.bar(x, avg, width=0.5, capsize=5, color=color, zorder=2)
+        if not err is None:
+            ax.errorbar(
+                x, avg, yerr=np.vstack([err, err]),
+                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+                )
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+
+    def _lineplot(ax, vals, x, color, label):
+        ax.plot(x, vals, color=color, label=label)
+        ax.grid(**grid_params)
     
     # Execute -----------------------------------------------------------------
     
+    plt.ioff()
+    
     # Initialize plot
-    fig, axes = plt.subplots(nrows=3, ncols=3, figsize=(7, 10))
+    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
     axes = axes.flatten()
+    
+    # Main title/info ---------------------------------------------------------
+       
+    # Main title    
+    fig.suptitle(
+        "Merged views" if merged else ncl_dfa["view"].iloc[0],
+        fontsize=16, fontweight="bold", color="k",
+        y=0.92, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n views = {ncl_dfa['view'].nunique()} | "
+        f"n nuclei = {ncl_dfa['count'].sum():,} | "
+        f"avg. entropy = {ncl_dfa['entropy'].mean():.3f}"
+        )
+    fig.text(
+        0.025, 0.89, text,
+        fontsize=12, color="0.5",
+        ha="left", va="top",
+        )
+    
+    # (0) Class predictions frequency -----------------------------------------
+    
+    ax = axes[0]
+    dfs = ncl_dfan
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(classes):
+        avg.append(dfs[dfs["class"] == cla]["count"].mean())
+        std.append(dfs[dfs["class"] == cla]["count"].std())
+        sem.append(dfs[dfs["class"] == cla]["count"].sem())
+    if merged:
+        _barplot(ax, avg, sclasses, colors, err=sem)
+    else:
+        _barplot(ax, avg, sclasses, colors, err=None)
+    
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class frequency", pad=10)
+    
+    # (1) Class predictions entropy -------------------------------------------
+    
+    ax = axes[1]
+    dfs = ncl_df
+    
+    for cl, cla in enumerate(classes):
+        vals = np.array(dfs[dfs["class"] == cla]["entropy"])
+        _boxplot(ax, vals, cl, colors[cl], merged=merged)
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Entropy")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class pred. entropy", pad=10)
+    
+    # (2) ??? -----------------------------------------------------------------
+    
+    ax = axes[2]
+    ax.axis("off")
+    ax.set_facecolor("none")
+    
+    # (3 - 8) Channel intensities ---------------------------------------------
     
     for cl, cla in enumerate(classes):
 
-        ax = axes[cl]                   
-        dfs = dfan if merged else dfn
+        ax = axes[cl + 3]                   
+        dfs = ncl_dfan if merged else ncl_dfn
         
         for ch, chn in enumerate(schannels):
             vals = np.array(dfs[dfs["class"] == cla][f"{chn}_avg"])
-            _plot(ax, vals, ch, colors[cl], merged=merged)
+            _boxplot(ax, vals, ch, colors[cl], merged=merged)
                     
         # Legend
         _ylim(ax)
@@ -456,55 +567,59 @@ def plot(df, dfa, dfn, dfan, channels, classes, colors):
         ax.set_xticklabels(schannels, rotation=45, ha="center")
         ax.set_title(cla, pad=10)
     
-    for i, measure in enumerate(["count", "entropy", "ASC_avg"]):
+    # (9) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[9]
+    dfs = ncl_dfan if merged else ncl_dfn
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(classes):
+        avg.append(dfs[dfs["class"] == cla]["ASC_avg"].mean())
+        std.append(dfs[dfs["class"] == cla]["ASC_avg"].std())
+        sem.append(dfs[dfs["class"] == cla]["ASC_avg"].sem())
+    _barplot(ax, avg, sclasses, colors, err=sem)
         
-        ax = axes[i + 6] 
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class ASC int.", pad=10)
         
-        if measure == "count":
-            dfs = dfan
-        if measure == "entropy":
-            dfs = dfa if merged else df
-        if measure == "ASC_avg":
-            dfs = dfan if merged else dfn
+    # (10) ASC distance class frequency ---------------------------------------
+    
+    ax = axes[10]
+    dfs = asc_dst_df
+    
+    for cl, cla in enumerate(classes):
+        vals = dfs[cla]
+        dsts = dfs["distances"]
+        _lineplot(ax, vals, dsts, colors[cl], cla)
         
-        for cl, cla in enumerate(classes):
-            vals = np.array(dfs[dfs["class"] == cla][measure])
-            _plot(ax, vals, cl, colors[cl], merged=merged)
-            
-        # Legend
-        if measure == "count":
-            ax.set_ylim(0, 1)
-            ax.set_ylabel("Count")
-            ax.set_title("Relative count", pad=10)
-        if measure == "entropy":
-            ax.set_ylim(0, 1)
-            ax.set_ylabel("Entropy")
-            ax.set_title("Class pred. entropy", pad=10)
-        if measure == "ASC_avg":
-            _ylim(ax)
-            ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-            ax.set_title("ASC Fluo. Int.", pad=10)
-        ax.set_xticklabels(sclasses, rotation=45, ha="center")
-
-    # Main title    
-    fig.suptitle(
-        "Merged views" if merged else dfa["view"].iloc[0],
-        fontsize=16, fontweight="bold", color="k",
-        y=0.95, x=0.025, ha="left",
-        )
-
-    # Secondary text
-    text = (
-        f"n views = {dfa['view'].nunique()}\n"
-        f"n nuclei = {dfa['count'].sum():,}\n"
-        f"avg. entropy = {dfa['entropy'].mean():.3f}"
-        )
-    fig.text(
-        0.05, 0.92, text,
-        fontsize=12, color=gcolor,
-        ha="left", va="top",
-        )
-
+    # Legend
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(dsts)
+    ax.set_title("ASC dist. class freq.", pad=10)
+    
+    # (11) ASC distance class enrichment --------------------------------------
+       
+    ax = axes[11]
+    dfs = asc_dst_dfn
+    
+    for cl, cla in enumerate(classes):
+        vals = dfs[cla]
+        dsts = dfs["distances"]
+        _lineplot(ax, vals, dsts, colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(dsts)
+    ax.set_title("ASC dist. class enrichment", pad=10)
+    
+    # -------------------------------------------------------------------------
+    
     plt.tight_layout(rect=[0, 0, 1, 0.9])
     plt.close(fig) 
     plt.ion()
