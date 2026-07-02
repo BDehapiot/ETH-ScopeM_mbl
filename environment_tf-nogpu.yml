@@ -11,7 +11,7 @@ dependencies:
   - scipy
   - pandas
   - scikit-image
-  - opencv
+  - opencv=4.8.0
   - scikit-learn
   - joblib
   - matplotlib-base
@@ -23,10 +23,11 @@ dependencies:
   # conda_tf-nogpu
   - pip:
     # pip-core
-    - bd-tools
     # pip-spec
+    - qptifffile
     # pip_tf-nogpu
     - albumentations
     - segmentation-models
     - tensorflow==2.10
     - h5py==3.11.0
+    - numpy>=1.24,<1.25

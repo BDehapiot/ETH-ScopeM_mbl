@@ -463,7 +463,7 @@ class Main:
                     
                 t0 = time.time()
 
-                crop_size = int(self.model_classes_name.split("_")[1])
+                crop_size = int(self.model_classes_name.split("_")[2])
                 crp_nrm = get_crops(
                     stk_nrm, ncl_ctd, 
                     crop_size=crop_size, 
