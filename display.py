@@ -1,5 +1,8 @@
 #%% Imports -------------------------------------------------------------------
 
+import os
+os.environ["QT_API"] = "pyqt6"
+
 import napari
 import pickle
 import numpy as np

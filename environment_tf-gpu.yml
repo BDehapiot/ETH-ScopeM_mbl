@@ -1,4 +1,4 @@
-name: mbl
+name: mbl_new
 
 channels:
   - conda-forge
@@ -11,14 +11,14 @@ dependencies:
   - scipy
   - pandas
   - scikit-image
-  - opencv=4.8.0
+  - opencv
   - scikit-learn
   - joblib
   - matplotlib-base
   - pip
   # conda-spec
   - napari
-  - pyqt
+  - pyqt6
   - spyder
   # conda_tf-gpu
   - cudatoolkit=11.2
