@@ -1,8 +1,5 @@
 #%% Imports -------------------------------------------------------------------
 
-import os
-os.environ["QT_API"] = "pyqt6"
-
 import napari
 import pickle
 import numpy as np
@@ -214,7 +211,7 @@ class Display:
             self.ncl_ctd, name="ncl_ctd", visible=1,
             blending="translucent", size=8, border_width=0.0,
             features={"class_label": self.ncl_prd},
-            face_color="class_label",
+            face_color={"colors": "class_label", "color_mode": "cycle"},
             face_color_cycle=self.color_map,
             opacity=1.0, 
             )
@@ -228,3 +225,4 @@ class Display:
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     display = Display(main)
+    napari.run()

@@ -779,3 +779,65 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
+    
+#%%
+
+    # def format_asc_distances(
+    #     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
+        
+    #     def get_counts(ncl_prd, normalized=False):
+    #         _, counts = np.unique(ncl_prd, return_counts=True)
+    #         if normalized:
+    #             counts = counts.astype("float32") / np.sum(counts)
+    #         return counts
+        
+    #     global counts_raw, counts_nrm, counts_all_raw, counts_all_nrm
+        
+    #     # Get bins
+    #     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+        
+    #     # Count nuclei class
+    #     counts_raw = []
+    #     counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
+    #     for d, dst in enumerate(bins):
+    #         dst0 = 0 if d == 0 else bins[d - 1]
+    #         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
+    #         counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+            
+    #     # Normalizations (enrichment)
+    #     counts_nrm = []
+    #     for d, dst in enumerate(bins):
+    #         counts_nrm.append(counts_raw[d] / counts_all_raw)
+        
+    #     # # Get dataframe
+    #     asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
+    #     asc_dst_df.insert(0, "distances", bins)
+    #     asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
+    #     asc_dst_dfn.insert(0, "distances", bins)
+        
+    #     return asc_dst_df, asc_dst_dfn
+
+#%%
+
+    # vws_idx = 0
+    # classes = main.classes
+    # vws_path = main.vws_paths[vws_idx]
+    # asc_dst_path = vws_path / "asc_distances.pkl"
+    # ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
+    
+    # # Load
+    # with open(ncl_prd_path, "rb") as file:
+    #     ncl_prd = pickle.load(file)
+    # with open(asc_dst_path, "rb") as file:
+    #     asc_dst = pickle.load(file)
+    
+    # # run
+    # format_asc_distances(
+    #     asc_dst, ncl_prd, classes, bin_size=8, bin_max=64, stk_level=1)
+    
+    
+    
+    
+    
+
+

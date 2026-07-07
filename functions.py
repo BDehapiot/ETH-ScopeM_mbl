@@ -390,7 +390,7 @@ def get_asc_distances(asc_prc, ncl_ctd, classes, stk_level=1):
     return asc_dst
     
 def format_asc_distances(
-        asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
+    asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
     
     def get_counts(ncl_prd, normalized=False):
         _, counts = np.unique(ncl_prd, return_counts=True)
@@ -402,18 +402,19 @@ def format_asc_distances(
     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
     
     # Count nuclei class
-    counts_raw, counts_nrm = [], []
-    counts_all_raw = np.stack(get_counts(ncl_prd, normalized=False))
-    counts_all_nrm = np.stack(get_counts(ncl_prd, normalized=True))
+    counts_raw = []
+    counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
     for d, dst in enumerate(bins):
         dst0 = 0 if d == 0 else bins[d - 1]
         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
-        counts_raw.append(get_counts(ncl_prd_dst, normalized=False))
-        counts_nrm.append(get_counts(ncl_prd_dst, normalized=True))
-    counts_raw = counts_raw / counts_all_raw
-    counts_nrm = counts_nrm / counts_all_nrm
+        counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+        
+    # Normalizations (enrichment)
+    counts_nrm = []
+    for d, dst in enumerate(bins):
+        counts_nrm.append(counts_raw[d] / counts_all_raw)
     
-    # Get dataframe
+    # # Get dataframe
     asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
     asc_dst_df.insert(0, "distances", bins)
     asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
