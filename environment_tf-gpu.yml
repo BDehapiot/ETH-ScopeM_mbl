@@ -19,7 +19,8 @@ dependencies:
   - cudnn=8.1
   - pip:
       - spyder>=6
-      - napari[pyqt6]
+      - napari
+      - pyside6>=6.4.0,<6.6.0
       - qptifffile
       - albumentations
       - segmentation-models

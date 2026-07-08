@@ -38,7 +38,7 @@ main_parameters = {
     "force_predict_asc"     : 1,
     "force_predict_classes" : 1,
     "force_measure"         : 1,
-    "force_analyse"         : 2,
+    "force_analyse"         : 1,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
