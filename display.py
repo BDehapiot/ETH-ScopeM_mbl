@@ -27,7 +27,7 @@ class Display:
                 
         # Initialize
         self.vws_idx = 0
-        self.chn_idx = 0   
+        self.chn_idx = 0
         self.cls_idx = 1
 
         # Run
