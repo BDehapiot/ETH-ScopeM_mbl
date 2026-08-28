@@ -28,7 +28,7 @@ parameters = {
     
     # Paths -------------------------------------------------------------------
     
-    "train_path" : Path.cwd() / "data" / "train_asc", 
+    "train_path" : Path.cwd() / "data" / "train_speckles", 
     
     # Extract -----------------------------------------------------------------
     

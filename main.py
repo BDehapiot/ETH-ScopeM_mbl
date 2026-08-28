@@ -780,121 +780,114 @@ class Main:
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     
+    # Imports
+    from skimage.transform import resize
+    
+    # Parameters
+    vws_idx = 6
+    y0, yn = 4000, 2000
+    x0, xn = 3000, 2000
+    y1 = y0 + yn
+    x1 = x0 + xn
+    
+    # Fetch
+    vws_path = main.vws_paths[vws_idx]
+    pvw_msk_path = vws_path / "preview_mask.tif"
+    stk_nrm_path = vws_path / "stack_norm.tif"
+    asc_prc_path = vws_path / "asc_processed.tif"
+    pvw_msk = io.imread(pvw_msk_path)
+    stk_nrm = io.imread(stk_nrm_path)
+    asc_prc = io.imread(asc_prc_path)
+    asc_nrm = stk_nrm[4, ...]    
+    
+    # Prepare masks
+    asc_msk = asc_prc > 0
+    pvw_msk = resize(pvw_msk, asc_nrm.shape) > 0.5
+    
+    # Crop
+    asc_nrm = asc_nrm[y0:y1, x0:x1] 
+    pvw_msk = pvw_msk[y0:y1, x0:x1] 
+    asc_msk = asc_msk[y0:y1, x0:x1]
+    
 #%%
 
     # Imports
     import cv2
-    import time
     import napari
+    import matplotlib.pyplot as plt
     from bdtools.norm import norm_pct
     from skimage.feature import blob_dog
-    
-    def get_blobs(arr, min_sigma=1, max_sigma=3, threshold=0.1):
-        
-        """
-        Isolates speckles within scale range [min_sigma, max_sigma].
-        Returns (y, x, sigma) array of detected dots.
-        """
+    from skimage.filters import gaussian
+
+    def get_blobs(arr, min_sigma=1, max_sigma=3, threshold=0.1, method="dog"):
         
         arr = norm_pct(arr, pct_low=0, pct_high=1)
+
         blobs = blob_dog(
             arr, 
+            overlap=0.5,
             min_sigma=min_sigma, 
             max_sigma=max_sigma, 
-            threshold=threshold
+            threshold=threshold,
            )
+        
         return blobs
     
     def show_blobs(shape, blobs, radius_factor=1.414, thickness=1):
-        
-        """
-        Creates a boolean array with circle outlines around detected blobs.
-        
-        Parameters:
-        - shape: tuple (height, width) of the original array.
-        - blobs: ndarray of shape (N, 3) where columns are (y, x, sigma).
-        - radius_factor: Factor to convert sigma to radius (sqrt(2) approx 1.414 for 2D DoG).
-        - thickness: Line thickness of the circle outline in pixels.
-        """
-        
-        # Create an empty uint8 canvas
-        mask = np.zeros(shape, dtype=np.uint8)
+
+        msk = np.zeros(shape, dtype=np.uint8)
         
         if len(blobs) == 0:
-            return mask.astype(bool)
+            return msk.astype(bool)
             
         for y, x, sigma in blobs:
-            center = (int(round(x)), int(round(y)))  # OpenCV expects (x, y)
+            center = (int(round(x)), int(round(y)))
             radius = int(round(sigma * radius_factor))
-            cv2.circle(mask, center, radius, color=1, thickness=thickness)
+            cv2.circle(msk, center, radius, color=1, thickness=thickness)
             
-        return mask.astype(bool)
+        return msk.astype(bool)
 
     # -------------------------------------------------------------------------
-
-    # Fetch
-    vws_path = main.vws_paths[0]
-    stk_nrm_path = vws_path / "stack_norm.tif"
-    asc_prc_path = vws_path / "asc_processed.tif"
-    stk_nrm = io.imread(stk_nrm_path)
-    asc_nrm = stk_nrm[4, ...]
-    asc_prc = io.imread(asc_prc_path)
     
-    arr = asc_nrm
+    # Preprocessing
+    # asc_nrm = gaussian(asc_nrm, sigma=1)
     
     # get_blobs()
     t0 = time.time()
     blobs = get_blobs(
-        arr, min_sigma=1, max_sigma=9, threshold=0.05)
+        asc_nrm, min_sigma=0.5, max_sigma=31, threshold=0.025)
     t1 = time.time()
     print(f"get_blobs() : {t1 - t0:.3f}s")
     
+    # Filter blobs
+    plt.hist(blobs[:, 2], bins=100, edgecolor="black", alpha=0.7)
+    blobs = blobs[np.where(blobs[:, 2] < 2)]
+    
     # show_blobs()
     t0 = time.time()
-    msk = show_blobs(
-        arr.shape, blobs, radius_factor=2 * 1.414, thickness=1)
+    blb_msk = show_blobs(
+        asc_nrm.shape, blobs, radius_factor=1, thickness=1)
     t1 = time.time()
     print(f"show_blobs() : {t1 - t0:.3f}s")
     
     # Display
     vwr = napari.Viewer()
     vwr.add_image(
-        arr, colormap="inferno",
+        asc_nrm, colormap="gray",
         blending="additive", opacity=0.5, gamma=0.25, 
         )
     vwr.add_image(
-        msk, colormap="gray",
-        blending="additive",
+        pvw_msk, colormap="bop blue",
+        blending="additive", opacity=0.1, gamma=1.0, 
         )
-    
-#%% 
-    
-    # # Imports
-    # import napari
-
-    # # Fetch
-    # vws_path = main.vws_paths[0]
-    # stk_nrm_path = vws_path / "stack_norm.tif"
-    # asc_prc_path = vws_path / "asc_processed.tif"
-    # stk_nrm = io.imread(stk_nrm_path)
-    # asc_nrm = stk_nrm[4, ...]
-    # asc_prc = io.imread(asc_prc_path)
-    
-    # # Process
-    # asc_msk = asc_prc > 0
-    
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", gamma=0.5, opacity=0.75,
-    #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="yellow",
-    #     blending="additive", opacity=0.25,
-    #     )
-    
-
+    vwr.add_image(
+        asc_msk, colormap="bop orange",
+        blending="additive", opacity=0.2, gamma=1.0,
+        )
+    vwr.add_image(
+        blb_msk, colormap="gray",
+        blending="additive", opacity=1.0, gamma=1.0,
+        )
     
 
     
