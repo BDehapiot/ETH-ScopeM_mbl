@@ -418,7 +418,6 @@ class Main:
                 t1f = time.time()
                 print(f"> {t1f - t0i:.3f}s")
                 
-                
 #%% Class(Main) : predict_classes() -------------------------------------------
             
     def predict_classes(self):
@@ -786,7 +785,7 @@ if __name__ == "__main__":
     from skimage.transform import resize
     
     # Parameters
-    vws_idx = 16
+    vws_idx = 0
     y0, yn = 4000, 2000
     x0, xn = 3000, 2000
     y1 = y0 + yn
@@ -803,13 +802,12 @@ if __name__ == "__main__":
     asc_nrm = stk_nrm[4, ...]    
     
     # Prepare masks
-    asc_msk = asc_prc > 0
     pvw_msk = resize(pvw_msk, asc_nrm.shape) > 0.5
     
     # Crop
-    asc_nrm = asc_nrm[y0:y1, x0:x1] 
-    pvw_msk = pvw_msk[y0:y1, x0:x1] 
-    asc_msk = asc_msk[y0:y1, x0:x1]
+    # asc_nrm = asc_nrm[y0:y1, x0:x1] 
+    # asc_prc = asc_prc[y0:y1, x0:x1] 
+    # pvw_msk = pvw_msk[y0:y1, x0:x1] 
     
     # # Display
     # import napari
@@ -825,236 +823,126 @@ if __name__ == "__main__":
     
 #%%
 
-    import numpy as np
+    import napari
     from skimage import draw
     from scipy.stats import pearsonr
+    from skimage.measure import label
+    from skimage.transform import rescale
     from skimage.feature import peak_local_max
+
+    def get_asc_processed(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
+        asc_msk = asc_prd > thresh
+        asc_prc = asc_nrm.copy()
+        asc_prc[~asc_msk] = 0 
+        factor = 2 ** (stk_level - asc_level)
+        asc_prc = rescale(asc_prc, 1 / factor)
+        return asc_prc
+
+    def get_asc_mask(
+        asc_nrm, asc_prc,
+        min_dist=5, min_int=25,
+        radius=7, sigma=1.0, min_corr=0.9, 
+        display=False,
+        ):
+        
+        # Nested function(s) --------------------------------------------------
+        
+        def get_gaussian_kernel(radius, sigma):
+            y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
+            kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
+            return kernel / kernel.max()
+        
+        def kernel_validation(
+            arr, coords, radius=5, sigma=2.0, min_correlation=0.85):
+            
+            # Get gaussian kernel
+            kernel = get_gaussian_kernel(radius, sigma)
+            kernel_flat = kernel.ravel()
+        
+            valid = []
+            r = radius
+            h, w = arr.shape
+            for y, x in coords:
+                
+                # Check boundaries
+                if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
+                    continue
+        
+                # Patch and correlate
+                patch = arr[y - r : y + r + 1, x - r : x + r + 1]
+                corr, _ = pearsonr(patch.ravel(), kernel_flat)
+                if corr >= min_correlation:
+                    valid.append([y, x])
+        
+            return np.array(valid)
+        
+        # Execute -------------------------------------------------------------
+        
+        # Find local maxima
+        coords = peak_local_max(
+            asc_nrm, min_distance=min_dist, threshold_abs=min_int
+            )
+        
+        # Validate candidates
+        valid_coords = kernel_validation(
+            asc_nrm, coords, radius=radius, sigma=sigma, 
+            min_correlation=min_corr,
+            )
+        
+        # Filter asc_msk
+        asc_msk = (asc_prc > 0).astype(np.uint8)
+        asc_lbl = label(asc_msk)
+        if len(valid_coords) > 0:
+            valid_lbl = np.unique(asc_lbl[valid_coords[:, 0], valid_coords[:, 1]])
+            valid_lbl = valid_lbl[valid_lbl != 0]
+            asc_msk[np.isin(asc_lbl, valid_lbl)] = 2
+        
+        # Make display
+        if display:
+            
+            import napari
+            
+            asc_display = np.zeros_like(asc_nrm, dtype=bool)
+            for y, x in coords:
+                rr, cc = draw.disk((y, x), 1, shape=asc_nrm.shape)
+                asc_display[rr, cc] = True
+            for y, x in valid_coords:
+                rr, cc = draw.circle_perimeter(y, x, radius, shape=asc_nrm.shape)
+                asc_display[rr, cc] = True
+                
+            vwr = napari.Viewer()
+            vwr.add_image(
+                asc_nrm, colormap="gray",
+                blending="additive", opacity=1.0, gamma=0.5, 
+                )
+            vwr.add_image(
+                asc_display, colormap="yellow",
+                blending="additive", opacity=0.75, gamma=1.0,
+                )
+            vwr.add_labels(
+                asc_msk, 
+                blending="additive", opacity=0.25,
+                )
+            
+        return asc_msk
     
-    
-    def generate_gaussian_kernel(radius: int, sigma: float) -> np.ndarray:
-        """Generate a normalized 2D Gaussian kernel centered in an odd-sized window."""
-        size = 2 * radius + 1
-        y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-        kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-        return kernel / kernel.max()  # Normalize peak to 1.0
-    
-    
-    def validate_spots_with_kernel(
-        image: np.ndarray,
-        candidates: np.ndarray,
-        radius: int = 5,
-        sigma: float = 2.0,
-        min_correlation: float = 0.85,
-    ) -> np.ndarray:
-        """Validate candidate local maxima against a target 2D Gaussian kernel.
-    
-        Parameters
-        ----------
-        image : np.ndarray
-            2D intensity array.
-        candidates : np.ndarray
-            Array of candidate coordinates (N, 2) from peak_local_max.
-        radius : int
-            Half-width of the kernel window in pixels.
-        sigma : float
-            Gaussian spread parameter (approx radius / 2).
-        min_correlation : float
-            Minimum required Pearson correlation (0.0 to 1.0).
-    
-        Returns
-        -------
-        validated_spots : np.ndarray
-            Coordinates of peaks passing the kernel match test.
-    
-        """
-        kernel = generate_gaussian_kernel(radius, sigma)
-        kernel_flat = kernel.ravel()
-    
-        h, w = image.shape
-        validated = []
-    
-        for y, x in candidates:
-            # Check boundary bounds
-            if y - radius < 0 or y + radius >= h or x - radius < 0 or x + radius >= w:
-                continue
-    
-            # Extract local patch surrounding the peak candidate
-            patch = image[y - radius : y + radius + 1, x - radius : x + radius + 1]
-    
-            # Calculate Pearson correlation coefficient
-            r, _ = pearsonr(patch.ravel(), kernel_flat)
-    
-            if r >= min_correlation:
-                validated.append([y, x])
-    
-        return np.array(validated)
-    
+    # -------------------------------------------------------------------------   
     
     # Parameters
-    min_distance = 5
-    threshold_abs = 50
+    parameters = {
+        "min_dist" : 5,
+        "min_int"  : 20,
+        "radius"   : 7,
+        "sigma"    : 0.75,
+        "min_corr" : 0.85,
+        "display"  : True,
+        }
+
+    t0 = time.time()
     
-    # Find local maxima
-    lmx = peak_local_max(
-        asc_nrm, min_distance=min_distance, threshold_abs=threshold_abs
+    asc_msk = get_asc_mask(
+        asc_nrm, asc_prc, **parameters
         )
     
-    test = validate_spots_with_kernel(
-        asc_nrm, lmx, radius=5, sigma=2.0, min_correlation=0.85)
-    
-    # Draw local maxima
-    asc_lmx = np.zeros_like(asc_nrm, dtype=bool)
-    for y, x in test:
-        rr, cc = draw.disk((y, x), 5, shape=asc_nrm.shape)
-        asc_lmx[rr, cc] = True
-    
-    # # Display
-    import napari
-    vwr = napari.Viewer()
-    vwr.add_image(
-        asc_nrm, colormap="gray",
-        blending="additive", opacity=0.5, gamma=0.5, 
-        )
-    vwr.add_image(
-        asc_lmx, colormap="bop blue",
-        blending="additive", opacity=0.5, gamma=1.0,
-        )
-    
-#%% 
-
-    # # Imports
-    # from skimage import draw
-    # from skimage.feature import peak_local_max
-    # from skimage.filters import gaussian, sobel
-    
-    # # Parameters
-    # radius = 1
-    # min_distance = 5
-    # threshold_abs = 50
-    
-    # # Preprocessing
-    # asc_prc = sobel(asc_nrm)
-    
-    # # Find local maxima
-    # lmx = peak_local_max(
-    #     asc_nrm, min_distance=min_distance, threshold_abs=threshold_abs
-    #     )
-    
-    # # Draw local maxima
-    # asc_lmx = np.zeros_like(asc_nrm, dtype=bool)
-    # for y, x in lmx:
-    #     rr, cc = draw.disk((y, x), radius, shape=asc_nrm.shape)
-    #     asc_lmx[rr, cc] = True
-        
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", opacity=0.5, gamma=0.5, 
-    #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.2, gamma=1.0,
-    #     )
-    # vwr.add_image(
-    #     asc_lmx, colormap="bop blue",
-    #     blending="additive", opacity=0.5, gamma=1.0,
-    #     )
-    
-    # vwr.add_image(
-    #     asc_prc, colormap="gray",
-    #     blending="additive", opacity=0.5, gamma=1.0,
-    #     )
-    
-#%% 
-
-    # # Imports
-    # import matplotlib.pyplot as plt
-    # from skimage.measure import label, regionprops_table
-
-    # # Process
-    # asc_lbl = label(asc_msk)
-
-    # asc_dat = regionprops_table(
-    #     label_image=asc_lbl,
-    #     intensity_image=asc_nrm,
-    #     properties=("label", "area", "mean_intensity")
-    #     )
-    # df = pd.DataFrame(asc_dat)
-    
-    # plt.scatter(df["area"], df["mean_intensity"], s=5, alpha=0.25)
-    # plt.xlim(0, 100)
-    # plt.ylim(0, 100)
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_labels(asc_lbl)
-    
-#%%
-    
-    # # Imports
-    # import cv2
-    # import napari
-    # from bdtools.norm import norm_pct
-    # from skimage.feature import blob_dog
-    
-    # def get_blobs(arr, min_sigma=1, max_sigma=3, threshold=0.1, method="dog"):
-        
-    #     arr = norm_pct(arr, pct_low=0, pct_high=1)
-    
-    #     blobs = blob_dog(
-    #         arr, 
-    #         overlap=0.5,
-    #         min_sigma=min_sigma, 
-    #         max_sigma=max_sigma, 
-    #         threshold=threshold,
-    #        )
-        
-    #     return blobs
-    
-    # def show_blobs(shape, blobs, radius_factor=1.414, thickness=1):
-    
-    #     msk = np.zeros(shape, dtype=np.uint8)
-        
-    #     if len(blobs) == 0:
-    #         return msk.astype(bool)
-            
-    #     for y, x, sigma in blobs:
-    #         center = (int(round(x)), int(round(y)))
-    #         radius = int(round(sigma * radius_factor))
-    #         cv2.circle(msk, center, radius, color=1, thickness=thickness)
-            
-    #     return msk.astype(bool)
-    
-    # # -------------------------------------------------------------------------
-       
-    # # get_blobs()
-    # t0 = time.time()
-    # blobs = get_blobs(
-    #     asc_nrm, min_sigma=0.5, max_sigma=31, threshold=0.05)
-    # t1 = time.time()
-    # print(f"get_blobs() : {t1 - t0:.3f}s")
-    
-    # # show_blobs()
-    # t0 = time.time()
-    # blb_msk = show_blobs(
-    #     asc_nrm.shape, blobs, radius_factor=1, thickness=1)
-    # t1 = time.time()
-    # print(f"show_blobs() : {t1 - t0:.3f}s")
-    
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", opacity=0.5, gamma=0.25, 
-    #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.2, gamma=1.0,
-    #     )
-    # vwr.add_image(
-    #     blb_msk, colormap="gray",
-    #     blending="additive", opacity=1.0, gamma=1.0,
-    #     )
+    t1 = time.time()
+    print(f"get_asc_mask() : {t1 - t0:.3f}s")
