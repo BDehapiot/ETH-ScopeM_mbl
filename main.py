@@ -16,7 +16,7 @@ from functions import (
     get_preview_processed, get_preview_stats,
     get_nuclei_mask, get_nuclei_centroids, 
     get_nuclei_stats, format_nuclei_stats,
-    get_asc_processed, get_asc_stats, format_asc_stats,
+    get_asc_mask, get_asc_stats, format_asc_stats,
     get_asc_distances, format_asc_distances,
     get_crops, get_crops_processed,
     plot,
@@ -33,10 +33,10 @@ from scipy.stats import entropy
 main_parameters = {
 
     # Procedure
-    "force_extract"         : 0,
-    "force_predict_nuclei"  : 0,
-    "force_predict_asc"     : 0,
-    "force_predict_classes" : 0,
+    "force_extract"         : 1,
+    "force_predict_nuclei"  : 1,
+    "force_predict_asc"     : 1,
+    "force_predict_classes" : 1,
     "force_measure"         : 0,
     "force_analyse"         : 0,
     
@@ -51,12 +51,19 @@ main_parameters = {
     "pvw_level"             : 4,
     "stk_level"             : 1,
         
-    # predict()
+    # predict_nuclei()
     "ncl_level"             : 0,
     "ncl_thresh_0"          : 0.25,
     "ncl_thresh_1"          : 0.50,
+    
+    # predict_asc()
     "asc_level"             : 0,
-    "asc_thresh"            : 0.05,
+    "asc_thresh"            : 0.2,
+    "min_dist"              : 5,   
+    "min_int"               : 0.08, 
+    "radius"                : 7, 
+    "sigma"                 : 1.0, 
+    "min_corr"              : 0.9, 
     
     # Measure()
     "crop_size"             : 64, # in pixels at stk_level = 0
@@ -337,10 +344,12 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
-            asc_prc_path = vws_path / "asc_processed.tif"
+            pvw_msk_path = vws_path / "preview_mask.tif"
+            asc_msk_path = vws_path / "asc_mask.tif"
+            asc_dsp_path = vws_path / "asc_display.tif"
             roi_idx = int(vws_path.stem[-2:])
             
-            if ((self.force_predict_asc > 0 and not asc_prc_path.exists()) 
+            if ((self.force_predict_asc > 0 and not asc_msk_path.exists()) 
                 or self.force_predict_asc == 2):
                                 
                 # Log
@@ -364,10 +373,12 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
+                pvw_msk = io.imread(pvw_msk_path)
                 asc_raw = load_view(
                     qpt_path, metadata=mtd, channels="ASC", 
                     level=self.asc_level, roi_idx=roi_idx,
                     )
+                
                 asc_nrm = norm_data(asc_raw, pvw_sts, channel="ASC")
                 
                 t1 = time.time()
@@ -382,16 +393,22 @@ class Main:
                                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - predict")
-    
-                # Process -----------------------------------------------------
+                   
+                # Get mask ----------------------------------------------------
     
                 t0 = time.time()
     
-                asc_prc = get_asc_processed(
-                    asc_nrm, asc_prd,
-                    thresh=self.asc_thresh,
+                asc_msk, asc_dsp = get_asc_mask(
+                    asc_prd, asc_nrm, pvw_msk,
                     asc_level=self.asc_level, 
-                    stk_level=self.stk_level,
+                    stk_level=self.stk_level, 
+                    pvw_level=self.pvw_level, 
+                    asc_thresh=self.asc_thresh, 
+                    min_dist=self.min_dist, 
+                    min_int=self.min_int, 
+                    radius=self.radius, 
+                    sigma=self.sigma, 
+                    min_corr=self.min_corr, 
                     )
                     
                 t1 = time.time()
@@ -402,13 +419,18 @@ class Main:
                 t0 = time.time()
                 
                 io.imsave(
-                    asc_prc_path, 
-                    (asc_prc * 255).astype("uint8"),
+                    asc_msk_path, 
+                    (asc_msk * 127).astype("uint8"),
+                    check_contrast=False,
+                    )
+                io.imsave(
+                    asc_dsp_path, 
+                    (asc_dsp * 255).astype("uint8"),
                     check_contrast=False,
                     )
                 
                 # Clear
-                del asc_raw, asc_nrm, asc_prd, asc_prc
+                del asc_raw, asc_nrm, asc_prd,
                 tf.keras.backend.clear_session()
                 gc.collect()
                 
@@ -778,171 +800,3 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)    
-    
-#%%
-
-    # Imports
-    from skimage.transform import resize
-    
-    # Parameters
-    vws_idx = 0
-    y0, yn = 4000, 2000
-    x0, xn = 3000, 2000
-    y1 = y0 + yn
-    x1 = x0 + xn
-    
-    # Fetch
-    vws_path = main.vws_paths[vws_idx]
-    pvw_msk_path = vws_path / "preview_mask.tif"
-    stk_nrm_path = vws_path / "stack_norm.tif"
-    asc_prc_path = vws_path / "asc_processed.tif"
-    pvw_msk = io.imread(pvw_msk_path)
-    stk_nrm = io.imread(stk_nrm_path)
-    asc_prc = io.imread(asc_prc_path)
-    asc_nrm = stk_nrm[4, ...]    
-    
-    # Prepare masks
-    pvw_msk = resize(pvw_msk, asc_nrm.shape) > 0.5
-    
-    # Crop
-    # asc_nrm = asc_nrm[y0:y1, x0:x1] 
-    # asc_prc = asc_prc[y0:y1, x0:x1] 
-    # pvw_msk = pvw_msk[y0:y1, x0:x1] 
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", opacity=0.5, gamma=0.25, 
-    #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.1, gamma=1.0, 
-    #     )
-    
-#%%
-
-    import napari
-    from skimage import draw
-    from scipy.stats import pearsonr
-    from skimage.measure import label
-    from skimage.transform import rescale
-    from skimage.feature import peak_local_max
-
-    def get_asc_processed(asc_nrm, asc_prd, thresh=0.2, asc_level=0, stk_level=1):
-        asc_msk = asc_prd > thresh
-        asc_prc = asc_nrm.copy()
-        asc_prc[~asc_msk] = 0 
-        factor = 2 ** (stk_level - asc_level)
-        asc_prc = rescale(asc_prc, 1 / factor)
-        return asc_prc
-
-    def get_asc_mask(
-        asc_nrm, asc_prc,
-        min_dist=5, min_int=25,
-        radius=7, sigma=1.0, min_corr=0.9, 
-        display=False,
-        ):
-        
-        # Nested function(s) --------------------------------------------------
-        
-        def get_gaussian_kernel(radius, sigma):
-            y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-            kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-            return kernel / kernel.max()
-        
-        def kernel_validation(
-            arr, coords, radius=5, sigma=2.0, min_correlation=0.85):
-            
-            # Get gaussian kernel
-            kernel = get_gaussian_kernel(radius, sigma)
-            kernel_flat = kernel.ravel()
-        
-            valid = []
-            r = radius
-            h, w = arr.shape
-            for y, x in coords:
-                
-                # Check boundaries
-                if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
-                    continue
-        
-                # Patch and correlate
-                patch = arr[y - r : y + r + 1, x - r : x + r + 1]
-                corr, _ = pearsonr(patch.ravel(), kernel_flat)
-                if corr >= min_correlation:
-                    valid.append([y, x])
-        
-            return np.array(valid)
-        
-        # Execute -------------------------------------------------------------
-        
-        # Find local maxima
-        coords = peak_local_max(
-            asc_nrm, min_distance=min_dist, threshold_abs=min_int
-            )
-        
-        # Validate candidates
-        valid_coords = kernel_validation(
-            asc_nrm, coords, radius=radius, sigma=sigma, 
-            min_correlation=min_corr,
-            )
-        
-        # Filter asc_msk
-        asc_msk = (asc_prc > 0).astype(np.uint8)
-        asc_lbl = label(asc_msk)
-        if len(valid_coords) > 0:
-            valid_lbl = np.unique(asc_lbl[valid_coords[:, 0], valid_coords[:, 1]])
-            valid_lbl = valid_lbl[valid_lbl != 0]
-            asc_msk[np.isin(asc_lbl, valid_lbl)] = 2
-        
-        # Make display
-        if display:
-            
-            import napari
-            
-            asc_display = np.zeros_like(asc_nrm, dtype=bool)
-            for y, x in coords:
-                rr, cc = draw.disk((y, x), 1, shape=asc_nrm.shape)
-                asc_display[rr, cc] = True
-            for y, x in valid_coords:
-                rr, cc = draw.circle_perimeter(y, x, radius, shape=asc_nrm.shape)
-                asc_display[rr, cc] = True
-                
-            vwr = napari.Viewer()
-            vwr.add_image(
-                asc_nrm, colormap="gray",
-                blending="additive", opacity=1.0, gamma=0.5, 
-                )
-            vwr.add_image(
-                asc_display, colormap="yellow",
-                blending="additive", opacity=0.75, gamma=1.0,
-                )
-            vwr.add_labels(
-                asc_msk, 
-                blending="additive", opacity=0.25,
-                )
-            
-        return asc_msk
-    
-    # -------------------------------------------------------------------------   
-    
-    # Parameters
-    parameters = {
-        "min_dist" : 5,
-        "min_int"  : 20,
-        "radius"   : 7,
-        "sigma"    : 0.75,
-        "min_corr" : 0.85,
-        "display"  : True,
-        }
-
-    t0 = time.time()
-    
-    asc_msk = get_asc_mask(
-        asc_nrm, asc_prc, **parameters
-        )
-    
-    t1 = time.time()
-    print(f"get_asc_mask() : {t1 - t0:.3f}s")
