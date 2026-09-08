@@ -72,6 +72,7 @@ class Display:
         ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
         ncl_plt_path = vws_path / "nuclei_plot.png"
         stk_nrm_path = vws_path / "stack_norm.tif"
+        asc_dsp_path = vws_path / "asc_display.tif"
         
         # Load
         with open(mtd_path, "rb") as file:
@@ -90,6 +91,7 @@ class Display:
         self.ncl_plt = self.ncl_plt.scaledToWidth(
             int(self.dock_width / 1.75), Qt.SmoothTransformation)
         self.stk_nrm = io.imread(stk_nrm_path)
+        self.asc_dsp = io.imread(asc_dsp_path)
 
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 
@@ -100,6 +102,7 @@ class Display:
     def update_view(self):
         self.load_data()
         self.vwr.layers["stk_nrm"].data = self.stk_nrm[self.chn_idx]
+        self.vwr.layers["asc_dsp"].data = self.asc_dsp
         self.vwr.layers["ncl_ctd"].data = self.ncl_ctd
         self.vwr.layers["ncl_ctd"].features = {"class_label": self.ncl_prd}
         self.plt_label.setPixmap(self.ncl_plt)
@@ -110,6 +113,7 @@ class Display:
         self.chn = self.chn_group.checkedButton().text()
         self.chn_idx = self.channels.index(self.chn)
         self.vwr.layers["stk_nrm"].data = self.stk_nrm[self.chn_idx]
+        
         self.auto_contrast()
         
     def update_class(self):
@@ -176,6 +180,19 @@ class Display:
             getattr(self, f"chk_{c}").stateChanged.connect(self.update_class)
         self.cls_group_box.setLayout(self.cls_group_layout)
         
+        # Create "ASC" menu
+        self.asc_group = QButtonGroup()
+        self.asc_group.setExclusive(False)
+        self.asc_group_box = QGroupBox("ASC")
+        self.asc_group_layout = QHBoxLayout()
+        self.chk_msk = QCheckBox("ASC_mask")
+        self.chk_spk = QCheckBox("ASC_speckles")
+        self.asc_group.addButton(self.chk_msk)
+        self.asc_group.addButton(self.chk_spk)
+        self.asc_group_layout.addWidget(self.chk_msk)
+        self.asc_group_layout.addWidget(self.chk_spk)
+        self.asc_group_box.setLayout(self.asc_group_layout)
+        
         # Create "plot" menu
         self.plt_label = QLabel()
         self.plt_label.setAlignment(Qt.AlignCenter)
@@ -185,6 +202,7 @@ class Display:
         self.layout.addWidget(self.vws_group_box)
         self.layout.addWidget(self.chn_group_box)
         self.layout.addWidget(self.cls_group_box)
+        self.layout.addWidget(self.asc_group_box)
         self.layout.addWidget(self.plt_label)
 
         # Create widget
@@ -204,16 +222,23 @@ class Display:
         
         self.vwr.add_image(
             self.stk_nrm[self.chn_idx], name="stk_nrm", visible=1,
-            opacity=0.6, gamma=0.6, 
+            blending="additive", opacity=0.6, gamma=0.6, 
+            )
+        
+        self.vwr.add_image(
+            self.asc_dsp, name="asc_dsp", colormap="bop orange", visible=0,
+            blending="additive", opacity=1.0,
             )
                 
         self.vwr.add_points(
             self.ncl_ctd, name="ncl_ctd", visible=1,
-            blending="translucent", size=8, border_width=0.0,
+            blending="translucent", size=6, border_width=0.0,
             features={"class_label": self.ncl_prd},
             face_color={"colors": "class_label", "color_mode": "cycle"},
             face_color_cycle=self.color_map,
-            opacity=1.0, 
+            border_color={"colors": "class_label", "color_mode": "cycle"},
+            border_color_cycle=self.color_map,
+            opacity=0.6, 
             )
         
         self.plt_label.setPixmap(self.ncl_plt)

@@ -350,7 +350,6 @@ def get_asc_mask(
     asc_prd, asc_nrm, pvw_msk,
     asc_level=0, stk_level=1, pvw_level=4, 
     asc_thresh=0.2, min_dist=5, min_int=25, radius=7, sigma=1.0, min_corr=0.9, 
-    display=False,
     ):
     
     # Nested function(s) ------------------------------------------------------
@@ -427,44 +426,31 @@ def get_asc_mask(
         
         return asc_msk, coords, valid_coords
     
-    def get_display(asc_nrm, asc_msk, coords, valid_coords):
+    def get_display(asc_msk, coords, valid_coords):
 
-        asc_dsp = np.zeros_like(asc_nrm, dtype=bool)
+        asc_dsp = np.zeros_like(asc_nrm, dtype=np.uint8)
+        asc_dsp[asc_msk > 0] = 64
+        
         for y, x in coords:
-            rr, cc = draw.disk((y, x), 1, shape=asc_nrm.shape)
-            asc_dsp[rr, cc] = True
+            rr, cc = draw.disk((y, x), 1, shape=asc_msk.shape)
+            asc_dsp[rr, cc] = 255
         for y, x in valid_coords:
             rr, cc = draw.circle_perimeter(
-                y, x, radius, shape=asc_nrm.shape)
-            asc_dsp[rr, cc] = True
-            
-        if display:
-            
-            import napari
-            
-            vwr = napari.Viewer()
-            vwr.add_image(
-                asc_nrm, colormap="gray",
-                blending="additive", opacity=1.0, gamma=0.5, 
-                )
-            vwr.add_image(
-                asc_dsp, colormap="yellow",
-                blending="additive", opacity=0.75, gamma=1.0,
-                )
-            vwr.add_labels(
-                asc_msk, 
-                blending="additive", opacity=0.25,
-                )
-        
-        return asc_dsp
+                y, x, radius * 2, shape=asc_msk.shape)
+            asc_dsp[rr, cc] = 255
+                    
+        return asc_dsp.astype("uint8")
                 
     # Execute -----------------------------------------------------------------
     
-    # Get asc prediction mask
+    # Get asc mask 
     asc_msk = asc_prd > asc_thresh
+    asc_prc = asc_nrm.copy()
+    asc_prc[asc_msk == 0] = 0
     rf = 1 / (2 ** (stk_level - asc_level))
     asc_msk = rescale(asc_msk, rf, order=0)
-    asc_nrm = rescale(asc_nrm, rf, order=0)
+    asc_nrm = rescale(asc_nrm, rf)
+    asc_prc = rescale(asc_prc, rf)
     
     # Get asc speckles
     asc_msk, coords, valid_coords = get_asc_speckles(
@@ -474,25 +460,44 @@ def get_asc_mask(
         )
     
     # Get display
-    asc_dsp = get_display(asc_nrm, asc_msk, coords, valid_coords)
+    asc_dsp = get_display(asc_msk, coords, valid_coords)
         
-    return asc_msk, asc_dsp
+    return asc_msk, asc_prc, asc_dsp
 
 #%% function(s) : asc ---------------------------------------------------------
 
-def get_asc_stats(pvw_msk, asc_prc, pvw_level=4, stk_level=1):
+def get_asc_stats(
+        pvw_msk, ncl_ctd, asc_msk,
+        pvw_level=4, stk_level=1
+        ):
+    
+    # Init.
     asc_sts = {}
     pvw_factor = (2 ** pvw_level) ** 2
     asc_factor = (2 ** stk_level) ** 2
-    pvw_area = np.sum(pvw_msk > 0) * pvw_factor
-    asc_area = np.sum(asc_prc > 0) * asc_factor
-    asc_int = np.sum(asc_prc) * asc_factor
-    asc_area_nrm = asc_area / pvw_area
-    asc_int_nrm = asc_int  / pvw_area
-    asc_sts["area"] = asc_area
-    asc_sts["int"] = asc_int
-    asc_sts["area_nrm"] = asc_area_nrm
-    asc_sts["int_nrm"] = asc_int_nrm
+    
+    # Areas
+    all_area = np.sum(pvw_msk > 0) * pvw_factor
+    asc_area = np.sum(asc_msk > 0) * asc_factor
+    asc_area_nrm = asc_area / all_area
+    
+    # Counts
+    ncl_num = len(ncl_ctd["y"][0])
+    asc_num = np.max(label(asc_msk > 0))
+    asc_spk_num = np.max(label(asc_msk > 200))
+    asc_num_ratio = asc_num / ncl_num
+    asc_spk_num_ratio = asc_spk_num / ncl_num
+            
+    # Append
+    asc_sts["all_area"         ] = all_area
+    asc_sts["asc_area"         ] = asc_area
+    asc_sts["asc_area_ratio"   ] = asc_area_nrm
+    asc_sts["ncl_num"          ] = ncl_num
+    asc_sts["asc_num"          ] = asc_num
+    asc_sts["asc_spk_num"      ] = asc_spk_num
+    asc_sts["asc_num_ratio"    ] = asc_num_ratio
+    asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
+    
     return asc_sts
 
 def format_asc_stats(asc_sts, vws_path):
@@ -500,10 +505,9 @@ def format_asc_stats(asc_sts, vws_path):
     asc_sts_df.insert(0, "view", vws_path.name)
     return asc_sts_df
 
-def get_asc_distances(asc_prc, ncl_ctd, classes, stk_level=1):
+def get_asc_distances(asc_msk, ncl_ctd, classes, stk_level=1):
             
     # Get edt
-    asc_msk = asc_prc > 0
     asc_edt = distance_transform_edt(~asc_msk)
     
     # Get asc distances
@@ -517,14 +521,15 @@ def get_asc_distances(asc_prc, ncl_ctd, classes, stk_level=1):
     asc_dst *= 2 ** stk_level
     
     return asc_dst
-    
+
 def format_asc_distances(
     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
     
     def get_counts(ncl_prd, normalized=False):
-        _, counts = np.unique(ncl_prd, return_counts=True)
-        if normalized:
-            counts = counts.astype("float32") / np.sum(counts)
+        counts = np.bincount(ncl_prd, minlength=len(classes)).astype("float32")
+        total = counts.sum()
+        if normalized and total > 0:
+            return counts / total
         return counts
     
     # Get bins
@@ -543,7 +548,7 @@ def format_asc_distances(
     for d, dst in enumerate(bins):
         counts_nrm.append(counts_raw[d] / counts_all_raw)
     
-    # # Get dataframe
+    # Get dataframe
     asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
     asc_dst_df.insert(0, "distances", bins)
     asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
