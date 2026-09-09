@@ -44,7 +44,7 @@ main_parameters = {
     "data_path"             : Path("D:\local_mbl\data"),
     "model_preview_name"    : "model-sm_preview_256_binary_227-1024",
     "model_nuclei_name"     : "model-sm_nuclei_256_edt_192-1024",
-    "model_asc_name"        : "model-sm_asc_256_edt_307-1024",
+    "model_asc_name"        : "model-sm_asc_256_binary_307-1024",
     "model_classes_name"    : "model-cls_classes_12_2_6_5045-8190b",
     
     # extract()
@@ -58,7 +58,7 @@ main_parameters = {
     
     # predict_asc()
     "asc_level"             : 0,
-    "asc_thresh"            : 0.05,
+    "asc_thresh"            : 0.2,
     "min_dist"              : 5,   
     "min_int"               : 0.08, 
     "radius"                : 5, 

@@ -12,7 +12,6 @@ from bdtools.norm import norm_pct
 
 # skimage
 from skimage import draw
-from scipy.stats import pearsonr
 from skimage.transform import rescale
 from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
@@ -21,6 +20,7 @@ from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
 
 # scipy
+from scipy.stats import pearsonr
 from scipy.ndimage import distance_transform_edt
        
 #%% function(s) : compression -------------------------------------------------

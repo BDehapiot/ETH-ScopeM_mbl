@@ -71,7 +71,7 @@ model_parameters = {
     
     "patch_size"         : 256,
     "patch_overlap"      : 128,
-    "mask_method"        : "edt", # (sm)
+    "mask_method"        : "binary", # (sm)
 
     # Train -------------------------------------------------------------------
     
