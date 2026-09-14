@@ -16,7 +16,7 @@ from functions import (
     get_preview_processed, get_preview_stats,
     get_nuclei_mask, get_nuclei_centroids, 
     get_nuclei_stats, format_nuclei_stats,
-    get_asc_processed, get_asc_stats, format_asc_stats,
+    get_asc_mask, get_asc_stats, format_asc_stats,
     get_asc_distances, format_asc_distances,
     get_crops, get_crops_processed,
     plot,
@@ -33,30 +33,37 @@ from scipy.stats import entropy
 main_parameters = {
 
     # Procedure
-    "force_extract"         : 0,
-    "force_predict_nuclei"  : 0,
-    "force_predict_asc"     : 0,
-    "force_predict_classes" : 0,
-    "force_measure"         : 0,
-    "force_analyse"         : 0,
+    "force_extract"         : 1,
+    "force_predict_nuclei"  : 1,
+    "force_predict_asc"     : 1,
+    "force_predict_classes" : 1,
+    "force_measure"         : 1,
+    "force_analyse"         : 1,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
     "model_preview_name"    : "model-sm_preview_256_binary_227-1024",
     "model_nuclei_name"     : "model-sm_nuclei_256_edt_192-1024",
-    "model_asc_name"        : "model-sm_asc_256_edt_307-1024",
+    "model_asc_name"        : "model-sm_asc_256_binary_307-1024",
     "model_classes_name"    : "model-cls_classes_12_2_6_5045-8190b",
     
     # extract()
     "pvw_level"             : 4,
     "stk_level"             : 1,
         
-    # predict()
+    # predict_nuclei()
     "ncl_level"             : 0,
     "ncl_thresh_0"          : 0.25,
     "ncl_thresh_1"          : 0.50,
+    
+    # predict_asc()
     "asc_level"             : 0,
-    "asc_thresh"            : 0.05,
+    "asc_thresh"            : 0.2,
+    "min_dist"              : 5,   
+    "min_int"               : 0.08, 
+    "radius"                : 5, 
+    "sigma"                 : 1.0, 
+    "min_corr"              : 0.8, 
     
     # Measure()
     "crop_size"             : 64, # in pixels at stk_level = 0
@@ -337,10 +344,13 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
+            pvw_msk_path = vws_path / "preview_mask.tif"
+            asc_msk_path = vws_path / "asc_mask.tif"
             asc_prc_path = vws_path / "asc_processed.tif"
+            asc_dsp_path = vws_path / "asc_display.tif"
             roi_idx = int(vws_path.stem[-2:])
             
-            if ((self.force_predict_asc > 0 and not asc_prc_path.exists()) 
+            if ((self.force_predict_asc > 0 and not asc_msk_path.exists()) 
                 or self.force_predict_asc == 2):
                                 
                 # Log
@@ -364,10 +374,12 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
+                pvw_msk = io.imread(pvw_msk_path)
                 asc_raw = load_view(
                     qpt_path, metadata=mtd, channels="ASC", 
                     level=self.asc_level, roi_idx=roi_idx,
                     )
+                
                 asc_nrm = norm_data(asc_raw, pvw_sts, channel="ASC")
                 
                 t1 = time.time()
@@ -382,16 +394,22 @@ class Main:
                                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - predict")
-    
-                # Process -----------------------------------------------------
+                   
+                # Get mask ----------------------------------------------------
     
                 t0 = time.time()
     
-                asc_prc = get_asc_processed(
-                    asc_nrm, asc_prd,
-                    thresh=self.asc_thresh,
+                asc_msk, asc_prc, asc_prd = get_asc_mask(
+                    asc_prd, asc_nrm, pvw_msk,
                     asc_level=self.asc_level, 
-                    stk_level=self.stk_level,
+                    stk_level=self.stk_level, 
+                    pvw_level=self.pvw_level, 
+                    asc_thresh=self.asc_thresh, 
+                    min_dist=self.min_dist, 
+                    min_int=self.min_int, 
+                    radius=self.radius, 
+                    sigma=self.sigma, 
+                    min_corr=self.min_corr, 
                     )
                     
                 t1 = time.time()
@@ -402,13 +420,25 @@ class Main:
                 t0 = time.time()
                 
                 io.imsave(
+                    asc_msk_path, 
+                    (asc_msk * 127).astype("uint8"),
+                    check_contrast=False,
+                    )
+                io.imsave(
                     asc_prc_path, 
                     (asc_prc * 255).astype("uint8"),
                     check_contrast=False,
                     )
+                io.imsave(
+                    asc_dsp_path, 
+                    asc_dsp,
+                    check_contrast=False,
+                    )
+                
+                asc_prc_path
                 
                 # Clear
-                del asc_raw, asc_nrm, asc_prd, asc_prc
+                del asc_raw, asc_nrm, asc_prd, asc_msk, asc_prc, asc_dsp
                 tf.keras.backend.clear_session()
                 gc.collect()
                 
@@ -514,10 +544,11 @@ class Main:
             ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
             pvw_msk_path = vws_path / "preview_mask.tif"  
             stk_nrm_path = vws_path / "stack_norm.tif"  
-            asc_prc_path = vws_path / "asc_processed.tif"
+            asc_msk_path = vws_path / "asc_mask.tif"
             ncl_sts_path = vws_path / "nuclei_stats.pkl"
             asc_sts_path = vws_path / "asc_stats.pkl"
             asc_dst_path = vws_path / "asc_distances.pkl"
+            asc_spk_dst_path = vws_path / "asc_speckles_distances.pkl"
 
             if ((self.force_measure > 0 and not ncl_sts_path.exists()) 
                 or self.force_measure == 2):                    
@@ -537,8 +568,7 @@ class Main:
                     ncl_ctd = pickle.load(file)
                 pvw_msk = io.imread(pvw_msk_path)
                 stk_nrm = io.imread(stk_nrm_path)
-                asc_prc = io.imread(asc_prc_path)
-                stk_nrm[4, ...] = asc_prc # replace asc channel
+                asc_msk = io.imread(asc_msk_path)
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
@@ -553,7 +583,6 @@ class Main:
                     crop_fraction=None, 
                     stk_level=self.stk_level,
                     )
-                
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - get crops")
@@ -571,16 +600,20 @@ class Main:
                 # Get asc data ------------------------------------------------
                     
                 t0 = time.time()
-                
-                asc_prc = asc_prc.astype("float32") / 255 # normalize
+                                
                 asc_sts = get_asc_stats(
-                    pvw_msk, asc_prc, 
+                    pvw_msk, ncl_ctd, asc_msk, 
                     pvw_level=self.pvw_level, 
                     stk_level=self.stk_level, 
                     )
                 
                 asc_dst = get_asc_distances(
-                    asc_prc, ncl_ctd, self.classes,
+                    asc_msk > 0, ncl_ctd, self.classes,
+                    stk_level=self.stk_level
+                    )
+                
+                asc_spk_dst = get_asc_distances(
+                    asc_msk > 200, ncl_ctd, self.classes,
                     stk_level=self.stk_level
                     )
                 
@@ -597,6 +630,8 @@ class Main:
                     pickle.dump(asc_sts, file)
                 with open(asc_dst_path, "wb") as file:
                     pickle.dump(asc_dst, file)
+                with open(asc_spk_dst_path, "wb") as file:
+                    pickle.dump(asc_spk_dst, file)
                     
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - save")
@@ -616,13 +651,15 @@ class Main:
         masc_sts_df_path = self.data_path / "merged_asc_sts_df.csv"
         aasc_dst_df_path = self.data_path / "averaged_asc_dst_df.csv"
         aasc_dst_dfn_path = self.data_path / "averaged_asc_dst_dfn.csv"
+        aasc_spk_dst_df_path = self.data_path / "averaged_asc_speckles_dst_df.csv"
+        aasc_spk_dst_dfn_path = self.data_path / "averaged_asc_speckles_dst_dfn.csv"
         mncl_plot_path = self.data_path / "merged_nuclei_plot.png"
         
         if ((self.force_analyse > 0 and not mncl_dfan_path.exists()) 
             or self.force_analyse == 2):     
         
             mncl_df, mncl_dfa, mncl_dfn, mncl_dfan = [], [], [], []
-            masc_sts_df, aasc_dst_df, aasc_dst_dfn = [], [], []
+            masc_sts_df, aasc_dst_df, aasc_dst_dfn, aasc_spk_dst_df, aasc_spk_dst_dfn = [], [], [], [], []
             for p, vws_path in enumerate(self.vws_paths):
                 
                 # Paths
@@ -631,6 +668,7 @@ class Main:
                 ncl_sts_path = vws_path / "nuclei_stats.pkl"
                 asc_sts_path = vws_path / "asc_stats.pkl"
                 asc_dst_path = vws_path / "asc_distances.pkl"
+                asc_spk_dst_path = vws_path / "asc_speckles_distances.pkl"
                 ncl_df_path = vws_path / "nuclei_df.csv"
                 ncl_dfa_path = vws_path / "nuclei_dfa.csv"
                 ncl_dfn_path = vws_path / "nuclei_dfn.csv"
@@ -638,6 +676,8 @@ class Main:
                 asc_sts_df_path = vws_path / "asc_sts_df.csv"
                 asc_dst_df_path = vws_path / "asc_dst_df.csv"
                 asc_dst_dfn_path = vws_path / "asc_dst_dfn.csv"
+                asc_spk_dst_df_path = vws_path / "asc_spk_dst_df.csv"
+                asc_spk_dst_dfn_path = vws_path / "asc_spk_dst_dfn.csv"
                 ncl_plot_path = vws_path / "nuclei_plot.png"
     
                 # Log
@@ -661,6 +701,8 @@ class Main:
                     asc_sts = pickle.load(file)
                 with open(asc_dst_path, "rb") as file:
                     asc_dst = pickle.load(file)
+                with open(asc_spk_dst_path, "rb") as file:
+                    asc_spk_dst = pickle.load(file)
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
@@ -675,8 +717,14 @@ class Main:
                     )
                 
                 asc_sts_df = format_asc_stats(asc_sts, vws_path)
+                
                 asc_dst_df, asc_dst_dfn = format_asc_distances(
                     asc_dst, ncl_prd, self.classes, stk_level=self.stk_level,
+                    bin_size=self.asc_bin_size, bin_max=self.asc_bin_max, 
+                    )
+                
+                asc_spk_dst_df, asc_spk_dst_dfn = format_asc_distances(
+                    asc_spk_dst, ncl_prd, self.classes, stk_level=self.stk_level,
                     bin_size=self.asc_bin_size, bin_max=self.asc_bin_max, 
                     )
                                 
@@ -707,6 +755,8 @@ class Main:
                 asc_sts_df.to_csv(asc_sts_df_path, index=False)
                 asc_dst_df.to_csv(asc_dst_df_path, index=False)
                 asc_dst_dfn.to_csv(asc_dst_dfn_path, index=False)
+                asc_spk_dst_df.to_csv(asc_spk_dst_df_path, index=False)
+                asc_spk_dst_dfn.to_csv(asc_spk_dst_dfn_path, index=False)
                 fig.savefig(ncl_plot_path, dpi=150, bbox_inches="tight")
                 
                 t1 = time.time()
@@ -720,6 +770,8 @@ class Main:
                 masc_sts_df.append(asc_sts_df)
                 aasc_dst_df.append(asc_dst_df)
                 aasc_dst_dfn.append(asc_dst_dfn)
+                aasc_spk_dst_df.append(asc_spk_dst_df)
+                aasc_spk_dst_dfn.append(asc_spk_dst_dfn)
                 
                 t1f = time.time()
                 print(f"> {t1f - t0i:.3f}s")
@@ -741,6 +793,8 @@ class Main:
             masc_sts_df = pd.concat(masc_sts_df, axis=0, ignore_index=True)
             aasc_dst_df = pd.concat(aasc_dst_df).groupby(level=0).mean()
             aasc_dst_dfn = pd.concat(aasc_dst_dfn).groupby(level=0).mean()
+            aasc_spk_dst_df = pd.concat(aasc_spk_dst_df).groupby(level=0).mean()
+            aasc_spk_dst_dfn = pd.concat(aasc_spk_dst_dfn).groupby(level=0).mean()
             
             # Plot ------------------------------------------------------------
             
@@ -766,6 +820,8 @@ class Main:
             masc_sts_df.to_csv(masc_sts_df_path, index=False)
             aasc_dst_df.to_csv(aasc_dst_df_path, index=False)
             aasc_dst_dfn.to_csv(aasc_dst_dfn_path, index=False)
+            aasc_spk_dst_df.to_csv(aasc_spk_dst_df_path, index=False)
+            aasc_spk_dst_dfn.to_csv(aasc_spk_dst_dfn_path, index=False)
             fig.savefig(mncl_plot_path, dpi=150, bbox_inches="tight")
             
             t1 = time.time()
@@ -779,207 +835,138 @@ class Main:
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)    
     
-#%%
-
-    # Imports
-    from skimage.transform import resize
+    # data_path = main_parameters["data_path"]
+    # vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
     
-    # Parameters
-    vws_idx = 0
-    y0, yn = 4000, 2000
-    x0, xn = 3000, 2000
-    y1 = y0 + yn
-    x1 = x0 + xn
+    # # -------------------------------------------------------------------------
     
-    # Fetch
-    vws_path = main.vws_paths[vws_idx]
-    pvw_msk_path = vws_path / "preview_mask.tif"
-    stk_nrm_path = vws_path / "stack_norm.tif"
-    asc_prc_path = vws_path / "asc_processed.tif"
-    pvw_msk = io.imread(pvw_msk_path)
-    stk_nrm = io.imread(stk_nrm_path)
-    asc_prc = io.imread(asc_prc_path)
-    asc_nrm = stk_nrm[4, ...]    
+    # # Paths
+    # ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+    # pvw_msk_path = vws_path / "preview_mask.tif"  
+    # stk_nrm_path = vws_path / "stack_norm.tif"  
+    # asc_msk_path = vws_path / "asc_mask.tif"
+    # ncl_sts_path = vws_path / "nuclei_stats.pkl"
+    # asc_sts_path = vws_path / "asc_stats.pkl"
+    # asc_dst_path = vws_path / "asc_distances.pkl"
     
-    # Prepare masks
-    asc_msk = asc_prc > 0
-    pvw_msk = resize(pvw_msk, asc_nrm.shape) > 0.5
+    # ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
     
-    # Crop
-    asc_nrm = asc_nrm[y0:y1, x0:x1] 
-    pvw_msk = pvw_msk[y0:y1, x0:x1] 
-    asc_msk = asc_msk[y0:y1, x0:x1]
+    # # -------------------------------------------------------------------------
     
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", opacity=0.5, gamma=0.25, 
-    #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.1, gamma=1.0, 
-    #     )
-    
-#%%
-
-    import napari
-    from skimage import draw
-    from scipy.stats import pearsonr
-    from skimage.measure import label
-    from skimage.feature import peak_local_max
-    
-    def get_gaussian_kernel(radius, sigma):
-        y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-        kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-        return kernel / kernel.max()
-    
-    def kernel_validation(
-        arr, coords, radius=5, sigma=2.0, min_correlation=0.85):
+    # with open(ncl_ctd_path, "rb") as file:
+    #     ncl_ctd = pickle.load(file)
+    # with open(ncl_prd_path, "rb") as file:
+    #     ncl_prd = pickle.load(file)
+    # pvw_msk = io.imread(pvw_msk_path)
+    # stk_nrm = io.imread(stk_nrm_path)
+    # asc_msk = io.imread(asc_msk_path)
         
-        # Get gaussian kernel
-        kernel = get_gaussian_kernel(radius, sigma)
-        kernel_flat = kernel.ravel()
+    # # -------------------------------------------------------------------------
     
-        valid = []
-        r = radius
-        h, w = arr.shape
-        for y, x in coords:
-            
-            # Check boundaries
-            if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
-                continue
+    # from skimage.measure import label
+    # from scipy.ndimage import distance_transform_edt
     
-            # Patch and correlate
-            patch = arr[y - r : y + r + 1, x - r : x + r + 1]
-            corr, _ = pearsonr(patch.ravel(), kernel_flat)
-            if corr >= min_correlation:
-                valid.append([y, x])
-    
-        return np.array(valid)
-    
-    def filter_asc_msk(asc_msk, valid_coords):
-        asc_lbl = label(asc_msk)
-        valid_lbl = asc_lbl[valid_coords[:, 0], valid_coords[:, 1]]
-        spk_msk = np.where(np.isin(asc_lbl, valid_lbl), asc_lbl, 0)
-        return spk_msk
-    
-    # -------------------------------------------------------------------------
-    
-    def get_asc_mask(
-        asc_nrm, asc_prc,
-        min_dist=5, min_int=25,
-        radius=7, sigma=1, min_corr=0.9,     
-        ):
+    # def get_asc_stats(
+    #         pvw_msk, ncl_ctd, asc_msk,
+    #         pvw_level=4, stk_level=1
+    #         ):
         
-        # Nested function(s) --------------------------------------------------
+    #     # Init.
+    #     asc_sts = {}
+    #     pvw_factor = (2 ** pvw_level) ** 2
+    #     asc_factor = (2 ** stk_level) ** 2
         
-        def get_gaussian_kernel(radius, sigma):
-            y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-            kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-            return kernel / kernel.max()
+    #     # Areas
+    #     all_area = np.sum(pvw_msk > 0) * pvw_factor
+    #     asc_area = np.sum(asc_msk > 0) * asc_factor
+    #     asc_area_nrm = asc_area / all_area
         
-        def kernel_validation(
-            arr, coords, radius=5, sigma=2.0, min_correlation=0.85):
-            
-            # Get gaussian kernel
-            kernel = get_gaussian_kernel(radius, sigma)
-            kernel_flat = kernel.ravel()
-        
-            valid = []
-            r = radius
-            h, w = arr.shape
-            for y, x in coords:
+    #     # Counts
+    #     ncl_num = len(ncl_ctd["y"][0])
+    #     asc_num = np.max(label(asc_msk > 0))
+    #     asc_spk_num = np.max(label(asc_msk > 200))
+    #     asc_num_ratio = asc_num / ncl_num
+    #     asc_spk_num_ratio = asc_spk_num / ncl_num
                 
-                # Check boundaries
-                if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
-                    continue
+    #     # Append
+    #     asc_sts["all_area"         ] = all_area
+    #     asc_sts["asc_area"         ] = asc_area
+    #     asc_sts["asc_area_ratio"   ] = asc_area_nrm
+    #     asc_sts["ncl_num"          ] = ncl_num
+    #     asc_sts["asc_num"          ] = asc_num
+    #     asc_sts["asc_spk_num"      ] = asc_spk_num
+    #     asc_sts["asc_num_ratio"    ] = asc_num_ratio
+    #     asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
         
-                # Patch and correlate
-                patch = arr[y - r : y + r + 1, x - r : x + r + 1]
-                corr, _ = pearsonr(patch.ravel(), kernel_flat)
-                if corr >= min_correlation:
-                    valid.append([y, x])
+    #     return asc_sts
+    
+    # def format_asc_stats(asc_sts, vws_path):
+    #     asc_sts_df = pd.DataFrame([asc_sts])
+    #     asc_sts_df.insert(0, "view", vws_path.name)
+    #     return asc_sts_df
+    
+    # def get_asc_distances(asc_msk, ncl_ctd, classes, stk_level=1):
+                
+    #     # Get edt
+    #     asc_edt = distance_transform_edt(~asc_msk)
         
-            return np.array(valid)
+    #     # Get asc distances
+    #     coords = (
+    #         ncl_ctd["y"][stk_level].astype(int), 
+    #         ncl_ctd["x"][stk_level].astype(int),
+    #         )
+    #     asc_dst = asc_edt[coords]
         
-        # Execute -------------------------------------------------------------
+    #     # Scale acc. to stk_level
+    #     asc_dst *= 2 ** stk_level
         
-        # Find local maxima
-        coords = peak_local_max(
-            asc_nrm, min_distance=min_distance, threshold_abs=threshold_abs
-            )
+    #     return asc_dst
+    
+    # def format_asc_distances(
+    #     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
         
-        # Validate candidates
-        valid_coords = kernel_validation(
-            asc_nrm, coords, radius=radius, sigma=sigma, 
-            min_correlation=min_correlation,
-            )
+    #     def get_counts(ncl_prd, normalized=False):
+    #         _, counts = np.unique(ncl_prd, return_counts=True)
+    #         if normalized:
+    #             counts = counts.astype("float32") / np.sum(counts)
+    #         return counts
         
-        # Filter asc_msk
-        asc_msk = asc_prc > 0
-        asc_lbl = label(asc_msk)
-        valid_lbl = asc_lbl[valid_coords[:, 0], valid_coords[:, 1]]
-        asc_msk = np.where(
-            np.isin(asc_lbl, valid_lbl), asc_lbl, 2, asc_msk.astype(np.uint8))
+    #     # Get bins
+    #     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+        
+    #     # Count nuclei class
+    #     counts_raw = []
+    #     counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
+    #     for d, dst in enumerate(bins):
+    #         dst0 = 0 if d == 0 else bins[d - 1]
+    #         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
+    #         counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+            
+    #     # Normalizations (enrichment)
+    #     counts_nrm = []
+    #     for d, dst in enumerate(bins):
+    #         counts_nrm.append(counts_raw[d] / counts_all_raw)
+        
+    #     # # Get dataframe
+    #     asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
+    #     asc_dst_df.insert(0, "distances", bins)
+    #     asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
+    #     asc_dst_dfn.insert(0, "distances", bins)
+        
+    #     return asc_dst_df, asc_dst_dfn
     
-        return asc_msk
+    # # -------------------------------------------------------------------------
     
-    # -------------------------------------------------------------------------
-    
-    # Parameters
-    min_distance = 5
-    threshold_abs = 25
-    radius = 7
-    sigma = 1
-    min_correlation = 0.9
-    
-    # Find local maxima
-    coords = peak_local_max(
-        asc_nrm, min_distance=min_distance, threshold_abs=threshold_abs
-        )
-    
-    # Validate candidates
-    valid_coords = kernel_validation(
-        asc_nrm, coords, radius=radius, sigma=sigma, 
-        min_correlation=min_correlation,
-        )
-    
-    # Test --------------------------------------------------------------------
-    
-    asc_msk = filter_asc_msk(asc_msk, valid_coords)
-    
-    # # Check kernel
-    # kernel = get_gaussian_kernel(radius, sigma)
-    # vwr = napari.Viewer()
-    # vwr.add_image(kernel, colormap="plasma")
-    
-    # -------------------------------------------------------------------------
-    
-    # Display
-    display = np.zeros_like(asc_nrm, dtype=bool)
-    for y, x in coords:
-        rr, cc = draw.disk((y, x), 1, shape=asc_nrm.shape)
-        display[rr, cc] = True
-    for y, x in valid_coords:
-        rr, cc = draw.circle_perimeter(y, x, radius, shape=asc_nrm.shape)
-        display[rr, cc] = True
-    
-    vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, colormap="gray",
-    #     blending="additive", opacity=1.0, gamma=0.5, 
+    # asc_sts = get_asc_stats(
+    #     pvw_msk, ncl_ctd, asc_msk, 
+    #     pvw_level=4, stk_level=1
     #     )
-    # vwr.add_image(
-    #     asc_msk, colormap="yellow",
-    #     blending="additive", opacity=0.1, gamma=1.0,
-    #     )
-    # vwr.add_image(
-    #     display, colormap="yellow",
-    #     blending="additive", opacity=0.5, gamma=1.0,
-    #     )
-    vwr.add_labels(
-        asc_msk,
-        blending="additive", opacity=0.5,
-        )
+    
+    # asc_sts_df = format_asc_stats(asc_sts, vws_path)
+    
+    # classes = main_parameters["classes"]
+    
+    # asc_dst = get_asc_distances(asc_msk > 200, ncl_ctd, classes, stk_level=1)
+    
+    # asc_dst_df, asc_dst_dfn = format_asc_distances(
+    #     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1)

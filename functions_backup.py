@@ -1,0 +1,778 @@
+#%% Imports -------------------------------------------------------------------
+
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from qptifffile import QPTiffFile
+import xml.etree.ElementTree as ET
+
+# bdtools
+from bdtools.conn import lbl_conn
+from bdtools.norm import norm_pct
+
+# skimage
+from skimage import draw
+from skimage.transform import rescale
+from skimage.feature import peak_local_max
+from skimage.segmentation import watershed
+from skimage.filters import gaussian, threshold_otsu
+from skimage.measure import label, regionprops, regionprops_table
+from skimage.morphology import disk, binary_closing, remove_small_objects
+
+# scipy
+from scipy.stats import pearsonr
+from scipy.ndimage import distance_transform_edt
+       
+#%% function(s) : compression -------------------------------------------------
+
+def save_compressed_mask(arr, path):
+    arr_bin = np.packbits(arr > 0)        
+    np.savez_compressed(path, data=arr_bin, org_shape=arr.shape)
+
+def load_compressed_mask(path):
+    with np.load(path) as loader:
+        arr_bin = loader["data"]
+        shape = loader["org_shape"]
+        unpacked = np.unpackbits(arr_bin)[:np.prod(shape)]
+        return unpacked.reshape(shape).astype(np.uint8) * 255
+    
+def save_compressed_stack(arr, path):
+    np.savez_compressed(path, data=arr)
+
+def load_compressed_stack(path):
+    with np.load(path) as loader:
+        return loader["data"]
+
+#%% function(s) : normalization -----------------------------------------------
+
+def norm_12_to_8bits(arr):
+    if arr.ndim == 2:
+        return ((arr + 8) / 16).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = ((img + 8) / 16)
+        return arr.astype("uint8")
+            
+def norm_pct_8bits(arr):
+    if arr.ndim == 2:
+        return (norm_pct(arr) * 255).astype("uint8")
+    elif arr.ndim == 3:
+        for i, img in enumerate(arr):
+            arr[i] = (norm_pct(img) * 255).astype("uint8")
+        return arr   
+
+def norm_data(arr, pvw_sts, channel=None):
+    
+    if arr.ndim == 2 and channel is None:
+        raise ValueError("please provide 'channel' as str for 2D ndarray")   
+    
+    arr = arr.astype("float32")
+    
+    if arr.ndim == 2:
+        avg = pvw_sts["avg"][channel]
+        std = pvw_sts["std"][channel]
+        arr -= avg
+        arr /= std
+        arr = norm_pct(arr)
+        
+    elif arr.ndim == 3:
+        channels = list(pvw_sts["avg"])
+        avgs = np.array([pvw_sts["avg"][chn] for chn in channels])
+        stds = np.array([pvw_sts["std"][chn] for chn in channels])
+        avgs = avgs[:, np.newaxis, np.newaxis]
+        stds = stds[:, np.newaxis, np.newaxis]
+        arr -= avgs
+        arr /= stds
+        for c, chn in enumerate(channels):
+            arr[c] = norm_pct(arr[c], sample_fraction=0.1)
+    
+    return arr
+
+#%% function(s) : get_slide_metadata() ----------------------------------------
+        
+def get_slide_metadata(path):
+
+    # Nested function(s) ------------------------------------------------------    
+
+    def get_view_rois(path, metadata):
+            
+        # Make avg. preview
+        preview = []
+        with QPTiffFile(path) as qptiff:
+            for channel in metadata["channels"]:
+                preview.append(qptiff.read_region(
+                    channel, level=metadata["level"][-1]
+                    ))
+        preview = np.mean(preview, axis=0)
+        
+        # Get mask
+        sigma = 32 / metadata["pixsize"][-1]
+        blurred = gaussian(preview, sigma=sigma)
+        thresh = threshold_otsu(blurred)
+        mask = blurred > thresh
+        mask = remove_small_objects(mask, min_size=sigma * 1024)
+        mask = binary_closing(mask, footprint=disk(sigma * 8))
+        
+        # Get views
+        metadata["roi"] = []
+        for props in regionprops(label(mask)):
+            if props.area * (2 ** metadata["level"][-1]) ** 2  > 1e8:
+                
+                coords = props.coords
+                y0 = np.min(coords[:, 0]) * 2 ** metadata["level"][-1]
+                y1 = np.max(coords[:, 0]) * 2 ** metadata["level"][-1]
+                x0 = np.min(coords[:, 1]) * 2 ** metadata["level"][-1]
+                x1 = np.max(coords[:, 1]) * 2 ** metadata["level"][-1]
+                
+                roi = []
+                for level in metadata["level"]:
+                    pad = 512 / 2 ** level
+                    y0s = (y0 / 2 ** level) - pad
+                    y1s = (y1 / 2 ** level) + pad
+                    x0s = (x0 / 2 ** level) - pad
+                    x1s = (x1 / 2 ** level) + pad
+                    roi.append((
+                        int(np.maximum(y0s, 0)),
+                        int(np.minimum(y1s, metadata["shape"][level][0])),
+                        int(np.maximum(x0s, 0)),
+                        int(np.minimum(x1s, metadata["shape"][level][1])),
+                        ))
+                    
+                metadata["roi"].append(roi)
+
+    # Execute -----------------------------------------------------------------
+
+    metadata = {
+        "channels" : [],
+        "level"    : [],
+        "pixsize"  : [],
+        "shape"    : [],
+        }
+        
+    # Fetch metadata
+    with QPTiffFile(path) as qptiff:
+        for level in range(len(qptiff.series[0].levels)):
+            xml = ET.fromstring(qptiff.get_channel_info()[0]["raw_xml"])
+            page = qptiff.series[0].levels[level].pages[0]
+            height, width = page.shape
+            pixsize = xml.find(".//PixelSizeMicrons")
+            pixsize = float(pixsize.text) * 2 ** level
+            metadata["channels"] = qptiff.get_biomarkers()
+            metadata["level"   ].append(level)
+            metadata["pixsize" ].append(pixsize)   
+            metadata["shape"   ].append((height, width))
+                
+    # Get view ROIs
+    get_view_rois(path, metadata)
+        
+    return metadata
+
+#%% function(s) : load_view() -------------------------------------------------
+
+def load_view(path, metadata=None, channels="all", level=4, roi_idx=None):
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def get_position():
+        roi = metadata["roi"]
+        return (
+            roi[roi_idx][level][2], 
+            roi[roi_idx][level][0],
+            )  
+    
+    def get_shape():
+        roi = metadata["roi"]
+        return (
+            roi[roi_idx][level][3] - roi[roi_idx][level][2],
+            roi[roi_idx][level][1] - roi[roi_idx][level][0],
+            )
+
+    # Execute -----------------------------------------------------------------
+    
+    # Load metadata
+    if metadata is None:
+        metadata = get_slide_metadata(path)
+    
+    # Get channels
+    if channels == "all":
+        channels = metadata["channels"]
+    elif isinstance(channels, str):
+        channels = [channels]
+    
+    # Load data
+    arr = []
+    with QPTiffFile(path) as qptiff:
+        for channel in channels:
+            if roi_idx is not None:
+                arr.append(qptiff.read_region(
+                    channel, level=level,
+                    pos=get_position(),
+                    shape=get_shape(),
+                    ))
+            else:
+                arr.append(qptiff.read_region(
+                    channel, level=level,
+                    ))
+                
+    return np.stack(arr).squeeze()
+
+#%% function(s) : preview -----------------------------------------------------
+
+def get_preview_processed(pvw_raw, channels=[2, 5, 6]):
+    pvw_prc = np.mean(
+        norm_pct(pvw_raw)[channels, ...], axis=0).astype("float32") 
+    return pvw_prc
+
+def get_preview_stats(pvw_raw, pvw_msk, channels):
+    pvw_msk = pvw_msk > 0
+    pvw_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        pvw_sts["avg"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+        pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
+    return pvw_sts
+
+def format_preview_stats():
+    pass
+
+#%% function(s) : crops -------------------------------------------------------
+
+def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
+    
+    # Pad (acc. to crop half size)
+    chs = crop_size // 2 # crop half size
+    pad_width = ((0, 0), (chs, chs), (chs, chs))
+    stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+
+    # Extract coordinates
+    ys = ncl_ctd["y"][stk_level].astype(int)
+    xs = ncl_ctd["x"][stk_level].astype(int)
+    
+    # Select random coordinates
+    if crop_fraction is not None:
+        crop_idx = np.random.choice(
+            np.arange(0, len(ys)), 
+            size=int(len(ys) * crop_fraction), 
+            replace=False,
+            )
+        ys = ys[crop_idx]
+        xs = xs[crop_idx]
+    
+    # Extract crops
+    crops = []
+    for (y, x) in zip(ys, xs):
+        y0 = y; y1 = y + crop_size
+        x0 = x; x1 = x + crop_size
+        if y1 - y0 != crop_size: print(y0, y1)
+        if x1 - x0 != crop_size: print(x0, x1)
+        crops.append(stk[..., y0:y1, x0:x1])
+        
+    return np.stack(crops)
+
+def get_crops_processed(crp):
+    crp_prc = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
+    crp_prc = np.transpose(crp_prc, (0, 2, 3, 1)) # transposition
+    crp_prc = crp_prc.astype("float32") / 255 # normalize
+    return crp_prc
+    
+#%% function(s) : nuclei ------------------------------------------------------
+    
+def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
+    msk_0 = ncl_prd > thresh_0
+    msk_1 = ncl_prd > thresh_1
+    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
+    msk[lbl_conn(msk, conn=2) == 2] = 0
+    if ncl_level == 0: min_size = 8
+    if ncl_level == 1: min_size = 2
+    if ncl_level >= 2: min_size = 1
+    msk = remove_small_objects(msk, min_size=min_size)
+    return msk > 0
+
+def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=0):
+    props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
+    y, x = props["centroid-0"], props["centroid-1"]
+    ctd = {"y" : [], "x" : []}
+    for level in range(n_levels):
+        factor = 2 ** (ncl_level - level)
+        ctd["y"].append(y * factor)
+        ctd["x"].append(x * factor)
+    return ctd
+
+def get_nuclei_stats(crp, channels):        
+    ncl_sts = {"avg" : {}, "std" : {}}
+    for c, chn in enumerate(channels):
+        ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
+        ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
+    return ncl_sts
+
+def format_nuclei_stats(
+    ncl_prd, ncl_ent, ncl_sts, vws_path, 
+    channels, classes
+    ):
+    
+    def mean_norm(df):
+        dfn = df.copy()
+        idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
+        dfn[idx] = df[idx] / df[idx].mean()
+        idx = df.filter(regex='|'.join(["count"])).columns
+        dfn[idx] = df[idx] / df[idx].sum()
+        return dfn
+    
+    def class_avg(df):
+        dfa = df.copy()
+        dfa = df.groupby("class").mean(numeric_only=True)
+        dfa = dfa.drop(columns=["idx"])
+        dfa.insert(loc=0, column="count", value=df.groupby("class").size())
+        dfa = dfa.reset_index()
+        dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
+        return dfa
+    
+    # Extrat data
+    ncl_df = pd.DataFrame()
+    n_nuclei = ncl_prd.shape[0]
+    n_classes = len(classes)
+    ncl_df["view"   ] = [vws_path.name] * n_nuclei
+    ncl_df["idx"    ] = np.arange(n_nuclei)
+    ncl_df["class"  ] = np.array(classes)[ncl_prd]
+    ncl_df["entropy"] = ncl_ent
+    for msr in ["avg"]:
+        for chn in channels:
+            key = f"{chn}_{msr}"
+            ncl_df[key] = ncl_sts[msr][chn]
+    ncl_dfa  = class_avg(ncl_df)
+    ncl_dfn  = mean_norm(ncl_df)
+    ncl_dfan = mean_norm(ncl_dfa)
+        
+    return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
+
+#%% function(s) : get_asc_mask() ----------------------------------------------
+
+def get_asc_mask(
+    asc_prd, asc_nrm, pvw_msk,
+    asc_level=0, stk_level=1, pvw_level=4, 
+    asc_thresh=0.2, min_dist=5, min_int=25, radius=7, sigma=1.0, min_corr=0.9, 
+    ):
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def get_asc_speckles(
+        asc_msk, asc_nrm, pvw_msk,
+        min_dist=5, min_int=25, radius=7, sigma=1.0, min_corr=0.9, 
+        ):
+          
+        # Nested function(s) --------------------------------------------------
+        
+        def get_gaussian_kernel(radius, sigma):
+            y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
+            kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
+            return kernel / kernel.max()
+        
+        def kernel_validation(
+            asc_nrm, pvw_msk, coords, 
+            radius=5, sigma=2.0, min_correlation=0.85,
+            stk_level=1, pvw_level=4,
+            ):
+            
+            # Get gaussian kernel
+            kernel = get_gaussian_kernel(radius, sigma)
+            kernel_flat = kernel.ravel()
+        
+            valid = []
+            r = radius
+            h, w = asc_nrm.shape
+            rf = 1 / (2 ** (pvw_level - stk_level))
+            for y, x in coords:
+                
+                # Check boundaries
+                if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
+                    continue
+                
+                # Check that coords in pvw_msk
+                py, px = int(y * rf), int(x * rf)
+                if py < 0 or py >= pvw_msk.shape[0] or px < 0 or px >= pvw_msk.shape[1]:
+                    continue
+                if pvw_msk[py, px] == 0:
+                    continue
+                            
+                # Patch and correlate
+                patch = asc_nrm[y - r : y + r + 1, x - r : x + r + 1]
+                corr, _ = pearsonr(patch.ravel(), kernel_flat)
+                if corr >= min_correlation:
+                    valid.append([y, x])
+        
+            return np.array(valid)
+        
+        # Execute -------------------------------------------------------------
+        
+        # Find local maxima
+        coords = peak_local_max(
+            asc_nrm, min_distance=min_dist, threshold_abs=min_int
+            )
+        
+        # Validate candidates
+        valid_coords = kernel_validation(
+            asc_nrm, pvw_msk, coords,
+            radius=radius, sigma=sigma, min_correlation=min_corr,
+            stk_level=stk_level, pvw_level=pvw_level,
+            )
+        
+        # Filter asc_msk
+        asc_lbl = label(asc_msk)
+        asc_msk = asc_msk.astype("uint8")
+        if len(valid_coords) > 0:
+            valid_lbl = np.unique(
+                asc_lbl[valid_coords[:, 0], valid_coords[:, 1]])
+            valid_lbl = valid_lbl[valid_lbl != 0]
+            asc_msk[np.isin(asc_lbl, valid_lbl)] = 2
+        
+        return asc_msk, coords, valid_coords
+    
+    def get_display(asc_msk, coords, valid_coords):
+
+        asc_dsp = np.zeros_like(asc_nrm, dtype=np.uint8)
+        asc_dsp[asc_msk > 0] = 64
+        
+        for y, x in coords:
+            rr, cc = draw.disk((y, x), 1, shape=asc_msk.shape)
+            asc_dsp[rr, cc] = 255
+        for y, x in valid_coords:
+            rr, cc = draw.circle_perimeter(
+                y, x, radius * 2, shape=asc_msk.shape)
+            asc_dsp[rr, cc] = 255
+                    
+        return asc_dsp.astype("uint8")
+                
+    # Execute -----------------------------------------------------------------
+    
+    # Get asc mask 
+    asc_msk = asc_prd > asc_thresh
+    asc_prc = asc_nrm.copy()
+    asc_prc[asc_msk == 0] = 0
+    rf = 1 / (2 ** (stk_level - asc_level))
+    asc_msk = rescale(asc_msk, rf, order=0)
+    asc_nrm = rescale(asc_nrm, rf)
+    asc_prc = rescale(asc_prc, rf)
+    
+    # Get asc speckles
+    asc_msk, coords, valid_coords = get_asc_speckles(
+        asc_msk, asc_nrm, pvw_msk,
+        min_dist=min_dist, min_int=min_int, 
+        radius=radius, sigma=sigma, min_corr=min_corr, 
+        )
+    
+    # Get display
+    asc_dsp = get_display(asc_msk, coords, valid_coords)
+        
+    return asc_msk, asc_prc, asc_dsp
+
+#%% function(s) : asc ---------------------------------------------------------
+
+def get_asc_stats(
+        pvw_msk, ncl_ctd, asc_msk,
+        pvw_level=4, stk_level=1
+        ):
+    
+    # Init.
+    asc_sts = {}
+    pvw_factor = (2 ** pvw_level) ** 2
+    asc_factor = (2 ** stk_level) ** 2
+    
+    # Areas
+    all_area = np.sum(pvw_msk > 0) * pvw_factor
+    asc_area = np.sum(asc_msk > 0) * asc_factor
+    asc_area_nrm = asc_area / all_area
+    
+    # Counts
+    ncl_num = len(ncl_ctd["y"][0])
+    asc_num = np.max(label(asc_msk > 0))
+    asc_spk_num = np.max(label(asc_msk > 200))
+    asc_num_ratio = asc_num / ncl_num
+    asc_spk_num_ratio = asc_spk_num / ncl_num
+            
+    # Append
+    asc_sts["all_area"         ] = all_area
+    asc_sts["asc_area"         ] = asc_area
+    asc_sts["asc_area_ratio"   ] = asc_area_nrm
+    asc_sts["ncl_num"          ] = ncl_num
+    asc_sts["asc_num"          ] = asc_num
+    asc_sts["asc_spk_num"      ] = asc_spk_num
+    asc_sts["asc_num_ratio"    ] = asc_num_ratio
+    asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
+    
+    return asc_sts
+
+def format_asc_stats(asc_sts, vws_path):
+    asc_sts_df = pd.DataFrame([asc_sts])
+    asc_sts_df.insert(0, "view", vws_path.name)
+    return asc_sts_df
+
+def get_asc_distances(asc_msk, ncl_ctd, classes, stk_level=1):
+            
+    # Get edt
+    asc_edt = distance_transform_edt(~asc_msk)
+    
+    # Get asc distances
+    coords = (
+        ncl_ctd["y"][stk_level].astype(int), 
+        ncl_ctd["x"][stk_level].astype(int),
+        )
+    asc_dst = asc_edt[coords]
+    
+    # Scale acc. to stk_level
+    asc_dst *= 2 ** stk_level
+    
+    return asc_dst
+
+def format_asc_distances(
+    asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
+    
+    def get_counts(ncl_prd, normalized=False):
+        counts = np.bincount(ncl_prd, minlength=len(classes)).astype("float32")
+        total = counts.sum()
+        if normalized and total > 0:
+            return counts / total
+        return counts
+    
+    # Get bins
+    bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+    
+    # Count nuclei class
+    counts_raw = []
+    counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
+    for d, dst in enumerate(bins):
+        dst0 = 0 if d == 0 else bins[d - 1]
+        ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
+        counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
+        
+    # Normalizations (enrichment)
+    counts_nrm = []
+    for d, dst in enumerate(bins):
+        counts_nrm.append(counts_raw[d] / counts_all_raw)
+    
+    # Get dataframe
+    asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
+    asc_dst_df.insert(0, "distances", bins)
+    asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
+    asc_dst_dfn.insert(0, "distances", bins)
+    
+    return asc_dst_df, asc_dst_dfn
+
+#%% function(s) : plots -------------------------------------------------------
+
+def plot(
+    ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, asc_dst_df, asc_dst_dfn,
+    asc_bin_size, asc_bin_max, 
+    channels, classes, colors
+    ):
+    
+    # Inputs ------------------------------------------------------------------
+    
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = ncl_df["view"].nunique(dropna=False) > 1
+    
+    hline_params = {
+        "y" : 1, "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":",
+        }
+    
+    grid_params = {
+        "axis" : "x", "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":", 
+        }
+    
+    # Nested function(s) ------------------------------------------------------
+        
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+        
+    def _boxplot(ax, vals, x, color, merged=False):
+        ax.boxplot(
+            vals, positions=[x], widths=0.5, patch_artist=True,
+            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
+            medianprops=dict(color=color, linewidth=2),
+            whiskerprops=dict(color="0.5", linewidth=1),
+            capprops=dict(color="0.5", linewidth=1),
+            showfliers=False,
+            )
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+        
+    def _barplot(ax, avg, x, color, err=None):
+        ax.bar(x, avg, width=0.5, capsize=5, color=color, zorder=2)
+        if not err is None:
+            ax.errorbar(
+                x, avg, yerr=np.vstack([err, err]),
+                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+                )
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+
+    def _lineplot(ax, vals, x, color, label):
+        ax.plot(x, vals, color=color, label=label)
+        ax.grid(**grid_params)
+    
+    # Execute -----------------------------------------------------------------
+    
+    plt.ioff()
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
+    axes = axes.flatten()
+    
+    # Main title/info ---------------------------------------------------------
+       
+    # Main title    
+    fig.suptitle(
+        "Merged views" if merged else ncl_dfa["view"].iloc[0],
+        fontsize=16, fontweight="bold", color="k",
+        y=0.92, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n views = {ncl_dfa['view'].nunique()} | "
+        f"n nuclei = {ncl_dfa['count'].sum():,} | "
+        f"avg. entropy = {ncl_dfa['entropy'].mean():.3f}"
+        )
+    fig.text(
+        0.025, 0.89, text,
+        fontsize=12, color="0.5",
+        ha="left", va="top",
+        )
+    
+    # (0) Class predictions frequency -----------------------------------------
+    
+    ax = axes[0]
+    dfs = ncl_dfan
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(classes):
+        avg.append(dfs[dfs["class"] == cla]["count"].mean())
+        std.append(dfs[dfs["class"] == cla]["count"].std())
+        sem.append(dfs[dfs["class"] == cla]["count"].sem())
+    if merged:
+        _barplot(ax, avg, sclasses, colors, err=sem)
+    else:
+        _barplot(ax, avg, sclasses, colors, err=None)
+    
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class frequency", pad=10)
+    
+    # (1) Class predictions entropy -------------------------------------------
+    
+    ax = axes[1]
+    dfs = ncl_df
+    
+    for cl, cla in enumerate(classes):
+        vals = np.array(dfs[dfs["class"] == cla]["entropy"])
+        _boxplot(ax, vals, cl, colors[cl], merged=merged)
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Entropy")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class pred. entropy", pad=10)
+    
+    # (2) ??? -----------------------------------------------------------------
+    
+    ax = axes[2]
+    ax.axis("off")
+    ax.set_facecolor("none")
+    
+    # (3 - 8) Channel intensities ---------------------------------------------
+    
+    for cl, cla in enumerate(classes):
+
+        ax = axes[cl + 3]                   
+        dfs = ncl_dfan if merged else ncl_dfn
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(dfs[dfs["class"] == cla][f"{chn}_avg"])
+            _boxplot(ax, vals, ch, colors[cl], merged=merged)
+                    
+        # Legend
+        _ylim(ax)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        ax.set_title(cla, pad=10)
+    
+    # (9) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[9]
+    dfs = ncl_dfan if merged else ncl_dfn
+    
+    avg, std, sem = [], [], []
+    for cl, cla in enumerate(classes):
+        avg.append(dfs[dfs["class"] == cla]["ASC_avg"].mean())
+        std.append(dfs[dfs["class"] == cla]["ASC_avg"].std())
+        sem.append(dfs[dfs["class"] == cla]["ASC_avg"].sem())
+    _barplot(ax, avg, sclasses, colors, err=sem)
+        
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Class ASC int.", pad=10)
+        
+    # (10) ASC distance class frequency ---------------------------------------
+    
+    ax = axes[10]
+    dfs = asc_dst_df
+    
+    for cl, cla in enumerate(classes):
+        vals = dfs[cla]
+        dsts = dfs["distances"]
+        _lineplot(ax, vals, dsts, colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Frequency")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(dsts)
+    ax.set_title("ASC dist. class freq.", pad=10)
+    
+    # (11) ASC distance class enrichment --------------------------------------
+       
+    ax = axes[11]
+    dfs = asc_dst_dfn
+    
+    for cl, cla in enumerate(classes):
+        vals = dfs[cla]
+        dsts = dfs["distances"]
+        _lineplot(ax, vals, dsts, colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(dsts)
+    ax.set_title("ASC dist. class enrichment", pad=10)
+    
+    # -------------------------------------------------------------------------
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    plt.close(fig) 
+    plt.ion()
+
+    return fig
+
+#%% function(s) : pad_images() ------------------------------------------------
+
+def pad_images(imgs):
+    imgs_padded = []
+    max_y = np.max([img.shape[0] for img in imgs])
+    max_x = np.max([img.shape[1] for img in imgs])
+    for img in imgs:
+        pad_y = max_y - img.shape[0]
+        pad_x = max_x - img.shape[1]
+        top, bottom = pad_y // 2, pad_y - (pad_y // 2)
+        left, right = pad_x // 2, pad_x - (pad_x // 2)
+        padding = ((top, bottom), (left, right))
+        imgs_padded.append(
+            np.pad(img, padding, mode="constant", constant_values=0))
+    return imgs_padded

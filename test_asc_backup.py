@@ -29,7 +29,7 @@ test_parameters = {
     
     # predict_asc()
     "asc_level"  : 0,
-    "asc_thresh" : 0.05,
+    "asc_thresh" : 0.01,
     "min_dist"   : 5,   
     "min_int"    : 0.075, 
     "radius"     : 5, 
@@ -206,6 +206,34 @@ if __name__ == "__main__":
     t1f = time.time()
     print(f"> {t1f - t0i:.3f}s")
                                        
+#%% 
+
+    def get_asc_mask(
+            asc_nrm, asc_prd, 
+            asc_thresh=0.05, 
+            stk_level=1, asc_level=0
+            ):
+        
+        # Rescale asc predictions
+        rf = 1 / (2 ** (stk_level - asc_level))
+        asc_prd = rescale(asc_prd, rf)
+        
+        # Get mask
+        asc_msk = asc_prd > asc_thresh
+        asc_prc = asc_nrm.copy()
+        asc_prc[asc_msk == 0] = 0
+        
+        # Separate speckles from blobs
+        asc_msk = remove_small_objects(asc_msk, min_size=4)
+        spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
+        
+        # Update asc mask
+        asc_msk = asc_msk.astype("float32")
+        asc_msk[spk_msk] = 2
+        
+        return asc_msk, asc_prc, asc_prd
+    
+    
 #%%
 
     # Process asc mask
@@ -217,18 +245,18 @@ if __name__ == "__main__":
     # vwr = napari.Viewer()
     # vwr.add_image(
     #     asc_nrm,
-    #     gamma=0.5, opacity=0.5,
+    #     gamma=0.5, opacity=1.0,
     #     )
     # vwr.add_image(
-    #     asc_prd, colormap="inferno", visible=1,
+    #     asc_prd, colormap="inferno", visible=0,
     #     blending="additive", opacity=0.5,
     #     )
     # vwr.add_image(
-    #     spk_msk, colormap="bop blue", visible=0,
+    #     spk_msk, colormap="bop orange", visible=1,
     #     blending="additive", opacity=0.5,
     #     )
     # vwr.add_image(
-    #     blb_msk, colormap="bop orange", visible=0,
+    #     blb_msk, colormap="blue", visible=1,
     #     blending="additive", opacity=0.5,
     #     ) 
     
@@ -238,28 +266,39 @@ if __name__ == "__main__":
     from bdtools.nan import nan_replace
     from skimage.filters import gaussian
     from skimage.morphology import disk, binary_dilation
+
+    def subtract_asc_background(
+            asc_nrm, asc_msk, stk_level=1, pvw_level=4):
+        
+        # Get background
+        rf = 1 / (2 ** (pvw_level - stk_level))
+        asc_nrm_rsc = rescale(asc_nrm, rf)
+        asc_msk_rsc = rescale(asc_msk, rf, order=0)
+        asc_bkg_rsc = asc_nrm_rsc.copy()
+        asc_bkg_rsc[binary_dilation(asc_msk_rsc, footprint=disk(3))] = np.nan
+        asc_bkg_rsc = nan_replace(asc_bkg_rsc, kernel_size=3, parallel=False)
+        asc_bkg_rsc = gaussian(asc_bkg_rsc, sigma=3, preserve_range=True)
+        
+        # Subtract background
+        asc_bkg = rescale(asc_bkg_rsc, 1 / rf)
+        asc_sub = asc_nrm - asc_bkg
+        asc_sub = norm_pct(asc_sub, sample_fraction=0.1)
+        
+        return asc_sub
     
-    rf = 1 / (2 ** (main_parameters["pvw_level"] - main_parameters["stk_level"]))
-    asc_msk_rsc = rescale(asc_msk, rf)
-    asc_nrm_rsc = rescale(asc_nrm, rf)
-    asc_bkg_rsc = asc_nrm_rsc.copy()
-    asc_bkg_rsc[binary_dilation(asc_msk_rsc, footprint=disk(3))] = np.nan
-    asc_bkg_rsc = nan_replace(asc_bkg_rsc, kernel_size=3, parallel=False)
-    asc_bkg_rsc = gaussian(asc_bkg_rsc, sigma=3)
-    
-    asc_bkg = rescale(asc_bkg_rsc, 1 / rf)
-    asc_sub = asc_nrm - asc_bkg
-    asc_sub = norm_pct(asc_sub, sample_fraction=0.1)
+    # Subtract asc background
+    asc_sub = subtract_asc_background(
+        asc_nrm, asc_msk, stk_level=1, pvw_level=4)
     
     # # Display
     # vwr = napari.Viewer()
     # vwr.add_image(
     #     asc_nrm, visible=0,
-    #     contrast_limits=[0, 1], gamma=0.5, opacity=1.0,
+    #     gamma=0.5, opacity=1.0,
     #     )
     # vwr.add_image(
-    #     asc_bkg, visible=0,
-    #     contrast_limits=[0, 1], gamma=0.5, opacity=1.0,
+    #     asc_bkg, visible=1,
+    #     gamma=0.5, opacity=1.0,
     #     )
     # vwr.add_image(
     #     asc_sub, visible=1,
@@ -272,92 +311,27 @@ if __name__ == "__main__":
     spk_lbl = label(spk_msk)
     props = regionprops_table(
         spk_lbl, intensity_image=asc_sub,
-        properties=("label", "centroid", "intensity_mean")
+        properties=(
+            "label", "centroid", 
+            "intensity_mean", 
+            "intensity_max", 
+            "intensity_std",
+            "eccentricity",
+            )
         )
-    mask = props["intensity_mean"] > main_parameters["min_int"]
-    valid_idx = props["label"][mask]
-    coords = np.column_stack((
-        np.round(props["centroid-0"][mask]).astype("int32"),
-        np.round(props["centroid-1"][mask]).astype("int32"),
-        ))
-    valid_spk_msk = np.isin(spk_lbl, valid_idx)
-    spk_msk[valid_spk_msk] = 0
     
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, visible=0,
-    #     contrast_limits=[0, 1], gamma=0.5, opacity=1.0,
-    #     )
-    # vwr.add_image(
-    #     asc_sub, visible=1,
-    #     gamma=0.5, opacity=1.0,
-    #     )
-    
-    # vwr.add_image(
-    #     blb_msk, colormap="blue", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     ) 
-    # vwr.add_image(
-    #     spk_msk, colormap="bop blue", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     )
-    # vwr.add_image(
-    #     valid_spk_msk, colormap="bop orange", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     )
-        
-    # -------------------------------------------------------------------------
-    
-    # Get gaussian kernel
-    kernel = get_gaussian_kernel(
-        main_parameters["radius"], main_parameters["sigma"])
-    # vwr = napari.Viewer()
-    # vwr.add_image(kernel, colormap="plasma")
-    
-    # Validate speckles
-    
-    params = {
-        "radius"    : 5, 
-        "sigma"     : 1.0, 
-        "min_corr"  : 0.8,
-        "stk_level" : 1, 
-        "pvw_level" : 4,
-        }
-    
-    valid_coords = get_valid_speckles(asc_sub, pvw_msk, coords, **params)
-    spk_dsp = get_speckle_display(
-        asc_msk, coords, valid_coords, main_parameters["radius"])
-
     # Display
     vwr = napari.Viewer()
     vwr.add_image(
-        asc_nrm, visible=0,
-        contrast_limits=[0, 1], gamma=0.5, opacity=1.0,
-        )
-    vwr.add_image(
-        asc_sub, visible=1,
+        asc_nrm, visible=1,
         gamma=0.5, opacity=1.0,
         )
-    
     vwr.add_image(
-        spk_dsp, colormap="bop orange", visible=1,
-        blending="additive", opacity=1.0,
+        spk_msk, colormap="bop orange", visible=1,
+        blending="additive", opacity=0.5,
         )
+    vwr.add_image(
+        blb_msk, colormap="blue", visible=1,
+        blending="additive", opacity=0.5,
+        ) 
     
-    # vwr.add_image(
-    #     asc_prd, colormap="inferno", visible=0,
-    #     blending="additive", opacity=0.5,
-    #     )
-    # vwr.add_image(
-    #     spk_msk, colormap="bop blue", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     )
-    # vwr.add_image(
-    #     spk_dsp, colormap="bop blue", visible=1,
-    #     blending="additive", opacity=1.0,
-    #     )
-    # vwr.add_image(
-    #     blb_msk, colormap="bop orange", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     ) 

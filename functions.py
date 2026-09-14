@@ -347,122 +347,31 @@ def format_nuclei_stats(
 #%% function(s) : get_asc_mask() ----------------------------------------------
 
 def get_asc_mask(
-    asc_prd, asc_nrm, pvw_msk,
-    asc_level=0, stk_level=1, pvw_level=4, 
-    asc_thresh=0.2, min_dist=5, min_int=25, radius=7, sigma=1.0, min_corr=0.9, 
-    ):
-    
-    # Nested function(s) ------------------------------------------------------
-    
-    def get_asc_speckles(
-        asc_msk, asc_nrm, pvw_msk,
-        min_dist=5, min_int=25, radius=7, sigma=1.0, min_corr=0.9, 
+        asc_nrm, asc_prd, pvw_msk, asc_thresh=0.05, 
+        pvw_level=4, stk_level=1, asc_level=0,
         ):
-          
-        # Nested function(s) --------------------------------------------------
-        
-        def get_gaussian_kernel(radius, sigma):
-            y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-            kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-            return kernel / kernel.max()
-        
-        def kernel_validation(
-            asc_nrm, pvw_msk, coords, 
-            radius=5, sigma=2.0, min_correlation=0.85,
-            stk_level=1, pvw_level=4,
-            ):
-            
-            # Get gaussian kernel
-            kernel = get_gaussian_kernel(radius, sigma)
-            kernel_flat = kernel.ravel()
-        
-            valid = []
-            r = radius
-            h, w = asc_nrm.shape
-            rf = 1 / (2 ** (pvw_level - stk_level))
-            for y, x in coords:
-                
-                # Check boundaries
-                if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
-                    continue
-                
-                # Check that coords in pvw_msk
-                py, px = int(y * rf), int(x * rf)
-                if py < 0 or py >= pvw_msk.shape[0] or px < 0 or px >= pvw_msk.shape[1]:
-                    continue
-                if pvw_msk[py, px] == 0:
-                    continue
-                            
-                # Patch and correlate
-                patch = asc_nrm[y - r : y + r + 1, x - r : x + r + 1]
-                corr, _ = pearsonr(patch.ravel(), kernel_flat)
-                if corr >= min_correlation:
-                    valid.append([y, x])
-        
-            return np.array(valid)
-        
-        # Execute -------------------------------------------------------------
-        
-        # Find local maxima
-        coords = peak_local_max(
-            asc_nrm, min_distance=min_dist, threshold_abs=min_int
-            )
-        
-        # Validate candidates
-        valid_coords = kernel_validation(
-            asc_nrm, pvw_msk, coords,
-            radius=radius, sigma=sigma, min_correlation=min_corr,
-            stk_level=stk_level, pvw_level=pvw_level,
-            )
-        
-        # Filter asc_msk
-        asc_lbl = label(asc_msk)
-        asc_msk = asc_msk.astype("uint8")
-        if len(valid_coords) > 0:
-            valid_lbl = np.unique(
-                asc_lbl[valid_coords[:, 0], valid_coords[:, 1]])
-            valid_lbl = valid_lbl[valid_lbl != 0]
-            asc_msk[np.isin(asc_lbl, valid_lbl)] = 2
-        
-        return asc_msk, coords, valid_coords
     
-    def get_display(asc_msk, coords, valid_coords):
-
-        asc_dsp = np.zeros_like(asc_nrm, dtype=np.uint8)
-        asc_dsp[asc_msk > 0] = 64
-        
-        for y, x in coords:
-            rr, cc = draw.disk((y, x), 1, shape=asc_msk.shape)
-            asc_dsp[rr, cc] = 255
-        for y, x in valid_coords:
-            rr, cc = draw.circle_perimeter(
-                y, x, radius * 2, shape=asc_msk.shape)
-            asc_dsp[rr, cc] = 255
-                    
-        return asc_dsp.astype("uint8")
-                
-    # Execute -----------------------------------------------------------------
+    # Rescale
+    rf = 1 / (2 ** (stk_level - asc_level))
+    asc_prd = rescale(asc_prd, rf)
+    rf = 1 / (2 ** (stk_level - pvw_level))
+    pvw_msk = rescale(pvw_msk, rf, order=0)
     
-    # Get asc mask 
+    # Get mask
     asc_msk = asc_prd > asc_thresh
     asc_prc = asc_nrm.copy()
     asc_prc[asc_msk == 0] = 0
-    rf = 1 / (2 ** (stk_level - asc_level))
-    asc_msk = rescale(asc_msk, rf, order=0)
-    asc_nrm = rescale(asc_nrm, rf)
-    asc_prc = rescale(asc_prc, rf)
     
-    # Get asc speckles
-    asc_msk, coords, valid_coords = get_asc_speckles(
-        asc_msk, asc_nrm, pvw_msk,
-        min_dist=min_dist, min_int=min_int, 
-        radius=radius, sigma=sigma, min_corr=min_corr, 
-        )
+    # Separate speckles from blobs
+    asc_msk = remove_small_objects(asc_msk, min_size=4)
+    spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
     
-    # Get display
-    asc_dsp = get_display(asc_msk, coords, valid_coords)
-        
-    return asc_msk, asc_prc, asc_dsp
+    # Update asc mask
+    asc_msk = asc_msk.astype("uint8")
+    asc_msk[spk_msk] = 2
+    asc_msk[pvw_msk == 0] = 0
+    
+    return asc_msk, asc_prc
 
 #%% function(s) : asc ---------------------------------------------------------
 

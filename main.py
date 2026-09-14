@@ -33,12 +33,12 @@ from scipy.stats import entropy
 main_parameters = {
 
     # Procedure
-    "force_extract"         : 1,
-    "force_predict_nuclei"  : 1,
+    "force_extract"         : 0,
+    "force_predict_nuclei"  : 0,
     "force_predict_asc"     : 1,
-    "force_predict_classes" : 1,
-    "force_measure"         : 1,
-    "force_analyse"         : 1,
+    "force_predict_classes" : 0,
+    "force_measure"         : 0,
+    "force_analyse"         : 0,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
@@ -345,6 +345,7 @@ class Main:
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
             pvw_msk_path = vws_path / "preview_mask.tif"
+            stk_nrm_path = vws_path / "stack_norm.tif"
             asc_msk_path = vws_path / "asc_mask.tif"
             asc_prc_path = vws_path / "asc_processed.tif"
             asc_dsp_path = vws_path / "asc_display.tif"
@@ -375,6 +376,7 @@ class Main:
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
                 pvw_msk = io.imread(pvw_msk_path)
+                stk_nrm = io.imread(stk_nrm_path)
                 asc_raw = load_view(
                     qpt_path, metadata=mtd, channels="ASC", 
                     level=self.asc_level, roi_idx=roi_idx,
@@ -399,17 +401,13 @@ class Main:
     
                 t0 = time.time()
     
-                asc_msk, asc_prc, asc_dsp = get_asc_mask(
-                    asc_prd, asc_nrm, pvw_msk,
-                    asc_level=self.asc_level, 
-                    stk_level=self.stk_level, 
-                    pvw_level=self.pvw_level, 
+                asc_nrm = stk_nrm[4, ...].astype("float32") / 255
+                asc_msk, asc_prc = get_asc_mask(
+                    asc_nrm, asc_prd, pvw_msk, 
                     asc_thresh=self.asc_thresh, 
-                    min_dist=self.min_dist, 
-                    min_int=self.min_int, 
-                    radius=self.radius, 
-                    sigma=self.sigma, 
-                    min_corr=self.min_corr, 
+                    pvw_level=self.pvw_level,
+                    stk_level=self.stk_level, 
+                    asc_level=self.asc_level,
                     )
                     
                 t1 = time.time()
@@ -421,7 +419,7 @@ class Main:
                 
                 io.imsave(
                     asc_msk_path, 
-                    (asc_msk * 127).astype("uint8"),
+                    asc_msk * 100,
                     check_contrast=False,
                     )
                 io.imsave(
@@ -429,16 +427,11 @@ class Main:
                     (asc_prc * 255).astype("uint8"),
                     check_contrast=False,
                     )
-                io.imsave(
-                    asc_dsp_path, 
-                    asc_dsp,
-                    check_contrast=False,
-                    )
                 
                 asc_prc_path
                 
                 # Clear
-                del asc_raw, asc_nrm, asc_prd, asc_msk, asc_prc, asc_dsp
+                del asc_raw, asc_nrm, asc_prd, asc_msk, asc_prc
                 tf.keras.backend.clear_session()
                 gc.collect()
                 

@@ -40,79 +40,6 @@ test_parameters = {
 
 main_parameters.update(test_parameters)
 
-#%% Function : get_asc_mask() -------------------------------------------------
-
-def get_asc_mask(
-        asc_nrm, asc_prd, asc_thresh=0.05, stk_level=1, asc_level=0):
-    
-    # Rescale asc predictions
-    rf = 1 / (2 ** (stk_level - asc_level))
-    asc_prd = rescale(asc_prd, rf)
-    
-    # Get mask
-    asc_msk = asc_prd > asc_thresh
-    asc_prc = asc_nrm.copy()
-    asc_prc[asc_msk == 0] = 0
-    
-    return asc_msk, asc_prc, asc_prd
-
-#%% Function : get_asc_speckles() ---------------------------------------------
-
-def get_gaussian_kernel(radius, sigma):
-    y, x = np.ogrid[-radius : radius + 1, -radius : radius + 1]
-    kernel = np.exp(-(x**2 + y**2) / (2 * sigma**2))
-    return kernel / kernel.max()
-
-def get_valid_speckles(
-        asc_nrm, pvw_msk, coords, 
-        radius=7, sigma=1.0, min_corr=0.9,
-        stk_level=1, pvw_level=4,
-        ):
-    
-    # Get gaussian kernel
-    kernel = get_gaussian_kernel(radius, sigma)
-    kernel_flat = kernel.ravel()
-
-    valid = []
-    r = radius
-    h, w = asc_nrm.shape
-    rf = 1 / (2 ** (pvw_level - stk_level))
-    for y, x in coords:
-        
-        # Check boundaries
-        if y - r < 0 or y + r >= h or x - r < 0 or x + r >= w:
-            continue
-        
-        # Check that coords in pvw_msk
-        py, px = int(y * rf), int(x * rf)
-        if py < 0 or py >= pvw_msk.shape[0] or px < 0 or px >= pvw_msk.shape[1]:
-            continue
-        if pvw_msk[py, px] == 0:
-            continue
-                    
-        # Patch and correlate
-        patch = asc_nrm[y - r : y + r + 1, x - r : x + r + 1]
-        corr, _ = pearsonr(patch.ravel(), kernel_flat)
-        if corr >= min_corr:
-            valid.append([y, x])
-
-    return np.array(valid)
-
-def get_speckle_display(asc_msk, coords, valid_coords, radius):
-
-    asc_dsp = np.zeros_like(asc_nrm, dtype=np.uint8)
-    # asc_dsp[asc_msk > 0] = 64
-    
-    for y, x in coords:
-        rr, cc = draw.disk((y, x), 1, shape=asc_msk.shape)
-        asc_dsp[rr, cc] = 255
-    for y, x in valid_coords:
-        rr, cc = draw.circle_perimeter(
-            y, x, radius * 2, shape=asc_msk.shape)
-        asc_dsp[rr, cc] = 255
-                
-    return asc_dsp.astype("uint8")
-
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
@@ -183,155 +110,67 @@ if __name__ == "__main__":
     t1 = time.time()
     print(f"{t1 - t0:.3f}s - predict")
     
-    # Get mask ----------------------------------------------------------------
+    t1f = time.time()
+    print(f"> {t1f - t0i:.3f}s")
     
+#%% Function : get_asc_mask() -------------------------------------------------
+
+def get_asc_mask(
+        asc_nrm, asc_prd, pvw_msk, asc_thresh=0.05,
+        pvw_level=4, stk_level=1, asc_level=0,
+        ):
+    
+    # Rescale
+    rf = 1 / (2 ** (stk_level - asc_level))
+    asc_prd = rescale(asc_prd, rf)
+    rf = 1 / (2 ** (stk_level - pvw_level))
+    pvw_msk = rescale(pvw_msk, rf, order=0)
+    
+    # Get mask
+    asc_msk = asc_prd > asc_thresh
+    asc_prc = asc_nrm.copy()
+    asc_prc[asc_msk == 0] = 0
+    
+    # Separate speckles from blobs
+    asc_msk = remove_small_objects(asc_msk, min_size=4)
+    spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
+    
+    # Update asc mask
+    asc_msk = asc_msk.astype("uint8")
+    asc_msk[spk_msk] = 2
+    asc_msk[pvw_msk == 0] = 0
+    
+    return asc_msk, asc_prc
+    
+#%% Execute -------------------------------------------------------------------
+    
+if __name__ == "__main__":
+
+    asc_thresh = main_parameters["asc_thresh"]
+    pvw_level = main_parameters["pvw_level"]
+    stk_level = main_parameters["stk_level"]   
+    asc_level = main_parameters["asc_level"]    
+
     t0 = time.time()
     
     asc_nrm = stk_nrm[4, ...].astype("float32") / 255
-    asc_msk, asc_prc, asc_prd = get_asc_mask(
-        asc_nrm, asc_prd, main_parameters["asc_thresh"])
+    asc_msk, asc_prc = get_asc_mask(
+        asc_nrm, asc_prd, pvw_msk, asc_thresh=asc_thresh,
+        pvw_level=pvw_level, stk_level=stk_level, asc_level=asc_level,
+        )
+    asc_msk = asc_msk * 100
     
     t1 = time.time()
     print(f"{t1 - t0:.3f}s - get mask")
-    
-    # Get speckles ------------------------------------------------------------
-    
-    t0 = time.time()
-    
-    t1 = time.time()
-    print(f"{t1 - t0:.3f}s - get speckles")
-    
-    # -------------------------------------------------------------------------
-    
-    t1f = time.time()
-    print(f"> {t1f - t0i:.3f}s")
-                                       
-#%% 
-
-    def get_asc_mask(
-            asc_nrm, asc_prd, 
-            asc_thresh=0.05, 
-            stk_level=1, asc_level=0
-            ):
-        
-        # Rescale asc predictions
-        rf = 1 / (2 ** (stk_level - asc_level))
-        asc_prd = rescale(asc_prd, rf)
-        
-        # Get mask
-        asc_msk = asc_prd > asc_thresh
-        asc_prc = asc_nrm.copy()
-        asc_prc[asc_msk == 0] = 0
-        
-        # Separate speckles from blobs
-        asc_msk = remove_small_objects(asc_msk, min_size=4)
-        spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
-        
-        # Update asc mask
-        asc_msk = asc_msk.astype("float32")
-        asc_msk[spk_msk] = 2
-        
-        return asc_msk, asc_prc, asc_prd
-    
-    
-#%%
-
-    # Process asc mask
-    asc_msk = remove_small_objects(asc_msk, min_size=4)
-    spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
-    blb_msk = asc_msk != spk_msk # for display
-    
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm,
-    #     gamma=0.5, opacity=1.0,
-    #     )
-    # vwr.add_image(
-    #     asc_prd, colormap="inferno", visible=0,
-    #     blending="additive", opacity=0.5,
-    #     )
-    # vwr.add_image(
-    #     spk_msk, colormap="bop orange", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     )
-    # vwr.add_image(
-    #     blb_msk, colormap="blue", visible=1,
-    #     blending="additive", opacity=0.5,
-    #     ) 
-    
-    # -------------------------------------------------------------------------
-    
-    from bdtools.norm import norm_pct
-    from bdtools.nan import nan_replace
-    from skimage.filters import gaussian
-    from skimage.morphology import disk, binary_dilation
-
-    def subtract_asc_background(
-            asc_nrm, asc_msk, stk_level=1, pvw_level=4):
-        
-        # Get background
-        rf = 1 / (2 ** (pvw_level - stk_level))
-        asc_nrm_rsc = rescale(asc_nrm, rf)
-        asc_msk_rsc = rescale(asc_msk, rf, order=0)
-        asc_bkg_rsc = asc_nrm_rsc.copy()
-        asc_bkg_rsc[binary_dilation(asc_msk_rsc, footprint=disk(3))] = np.nan
-        asc_bkg_rsc = nan_replace(asc_bkg_rsc, kernel_size=3, parallel=False)
-        asc_bkg_rsc = gaussian(asc_bkg_rsc, sigma=3, preserve_range=True)
-        
-        # Subtract background
-        asc_bkg = rescale(asc_bkg_rsc, 1 / rf)
-        asc_sub = asc_nrm - asc_bkg
-        asc_sub = norm_pct(asc_sub, sample_fraction=0.1)
-        
-        return asc_sub
-    
-    # Subtract asc background
-    asc_sub = subtract_asc_background(
-        asc_nrm, asc_msk, stk_level=1, pvw_level=4)
-    
-    # # Display
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     asc_nrm, visible=0,
-    #     gamma=0.5, opacity=1.0,
-    #     )
-    # vwr.add_image(
-    #     asc_bkg, visible=1,
-    #     gamma=0.5, opacity=1.0,
-    #     )
-    # vwr.add_image(
-    #     asc_sub, visible=1,
-    #     gamma=0.5, opacity=1.0,
-    #     )
-    
-    # -------------------------------------------------------------------------
-    
-    # Filter asc speckles
-    spk_lbl = label(spk_msk)
-    props = regionprops_table(
-        spk_lbl, intensity_image=asc_sub,
-        properties=(
-            "label", "centroid", 
-            "intensity_mean", 
-            "intensity_max", 
-            "intensity_std",
-            "eccentricity",
-            )
-        )
-    
+       
     # Display
     vwr = napari.Viewer()
     vwr.add_image(
-        asc_nrm, visible=1,
+        asc_nrm,
         gamma=0.5, opacity=1.0,
         )
     vwr.add_image(
-        spk_msk, colormap="bop orange", visible=1,
+        asc_msk, colormap="bop orange", visible=1,
         blending="additive", opacity=0.5,
         )
-    vwr.add_image(
-        blb_msk, colormap="blue", visible=1,
-        blending="additive", opacity=0.5,
-        ) 
     
