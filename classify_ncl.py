@@ -3,6 +3,7 @@
 import napari
 import pickle
 import numpy as np
+from skimage import io
 from pathlib import Path
 from main import Main, main_parameters
 
@@ -68,7 +69,7 @@ class Classify:
         vws_path = self.vws_paths[self.vws_idx]
         ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
         ncl_ann_path = vws_path / "nuclei_classes_annotations.pkl"
-        stk_raw_path = vws_path / "stack_raw.npz"
+        stk_raw_path = vws_path / "stack_norm.tif"
         
         # Load data
         with open(ncl_ctd_path, "rb") as file:
@@ -77,7 +78,7 @@ class Classify:
                 self.ncl_ctd["y"][self.stk_level],
                 self.ncl_ctd["x"][self.stk_level],
                 ))
-        self.stk_raw = load_compressed_stack(stk_raw_path)
+        self.stk_raw = io.imread(stk_raw_path)
         
         # Load nuclei classes (if exists)
         if not ncl_ann_path.exists():
@@ -136,7 +137,7 @@ class Classify:
         with open(ncl_ann_path, "wb") as file:
             pickle.dump(self.ncl_ann, file)
         
-#%% Class(Classify) : init_viewer() --------------------------------------------                
+#%% Class(Classify) : init_viewer() -------------------------------------------            
 
     def init_viewer(self):
             
@@ -192,7 +193,7 @@ class Classify:
 
         # "update_channel()"
         self.vwr.dims.events.current_step.connect(self.update_channel)
-                
+                        
 #%% Class(Classify) : init_layers() -------------------------------------------
 
     def init_layers(self):  
