@@ -231,12 +231,22 @@ def get_preview_stats(pvw_raw, pvw_msk, channels):
         pvw_sts["std"][chn] = np.mean(pvw_raw[c, ...][pvw_msk])
     return pvw_sts
 
-def format_preview_stats():
-    pass
+#%% function(s) : get_obj_mask() ----------------------------------------------
 
-#%% function(s) : crops -------------------------------------------------------
+def get_nuclei_mask(prd, thresh_0=0.25, thresh_1=0.50, prd_level=0):
+    msk_0 = prd > thresh_0
+    msk_1 = prd > thresh_1
+    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
+    msk[lbl_conn(msk, conn=2) == 2] = 0
+    if ncl_level == 0: min_size = 8
+    if ncl_level == 1: min_size = 2
+    if ncl_level >= 2: min_size = 1
+    msk = remove_small_objects(msk, min_size=min_size)
+    return msk > 0
 
-def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
+#%% function(s) : get_obj_crops() ---------------------------------------------
+
+def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
     
     # Pad (acc. to crop half size)
     chs = crop_size // 2 # crop half size
@@ -244,8 +254,8 @@ def get_crops(stk, ncl_ctd, crop_size=32, crop_fraction=None, stk_level=1):
     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
 
     # Extract coordinates
-    ys = ncl_ctd["y"][stk_level].astype(int)
-    xs = ncl_ctd["x"][stk_level].astype(int)
+    ys = ctd["y"][stk_level].astype(int)
+    xs = ctd["x"][stk_level].astype(int)
     
     # Select random coordinates
     if crop_fraction is not None:

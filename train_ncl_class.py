@@ -24,11 +24,11 @@ parameters = {
     
     "run_crops"          : 0,
     "run_classify"       : 0,
-    "run_train"          : 1,
+    "run_train"          : 0,
     
     # Paths -------------------------------------------------------------------
     
-    "train_path" : Path.cwd() / "data" / "train_class", 
+    "train_path" : Path.cwd() / "data" / "train_ncl_class", 
         
     # Crops -------------------------------------------------------------------
     

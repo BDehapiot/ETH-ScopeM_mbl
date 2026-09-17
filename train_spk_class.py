@@ -1,0 +1,348 @@
+#%% Imports -------------------------------------------------------------------
+
+import time
+import pickle
+import numpy as np
+from skimage import io
+from pathlib import Path
+from classify_spk import ClassifySPK 
+from main import Main, main_parameters
+
+# functions
+from functions import (
+    get_crops, get_crops_processed, 
+    save_compressed_stack, load_compressed_stack
+    )
+
+# bdtools
+from bdtools.model.model import Model
+
+#%% Inputs --------------------------------------------------------------------
+
+parameters = {
+    
+    # Procedure ---------------------------------------------------------------
+    
+    "run_classify"       : 0,
+    "run_crops"          : 1,
+    "run_train"          : 0,
+    
+    # Paths -------------------------------------------------------------------
+    
+    "train_path" : Path.cwd() / "data" / "train_spk_class", 
+        
+    # Crops -------------------------------------------------------------------
+    
+    "crop_size"          : 12,
+    
+    }
+
+model_parameters = {
+
+    # Paths -------------------------------------------------------------------
+    
+    "root_path"          : None,
+    "model_name"         : None,
+
+    # Build -------------------------------------------------------------------
+    
+    "model_type"         : "cls",
+    "input_shape"        : (None, None, 5),
+    "loss"               : "cce",
+    "metric"             : "acc",
+       
+    # # sm
+    # "backbone"           : "resnet18",
+    
+    # cls
+    "filters"            : [16, 32],
+    "n_classes"          : 6,
+    "classes"            : ["oth", "epi", "neu", "mac", "bcl", "tcl"],
+    "glob_avg_pool"      : False,
+    "regularizer"        : None,
+    "dropout"            : 0.3,
+    
+    # # aec
+    # "filters"            : [16, 32],
+    # "latent_size"        : 128,
+    
+    # Prepare -----------------------------------------------------------------
+    
+    "patch_size"         : 12,
+    "patch_overlap"      : 0,
+
+    # Train -------------------------------------------------------------------
+    
+    "display"            : 0,
+    "epochs"             : 2048,
+    "batch_size"         : 32,
+    "validation_split"   : 0.2,
+    "learning_rate"      : 0.001,
+    "patience"           : 512,
+
+    # Augment -----------------------------------------------------------------
+    
+    "augment_iterations" : 8192,
+    "augment_gamma_p"    : 0.0,
+    "augment_gblur_p"    : 0.0,
+    "augment_noise_p"    : 0.0,
+    "augment_flip_p"     : 0.5,
+    "augment_distort_p"  : 0.0,
+    "augment_balance"    : True, # (cls)
+    
+    "augment_parameters" : {
+        
+    # Gamma
+    "gamma_low"          : 0.75,
+    "gamma_high"         : 1.25,
+    "gamma_chn"          : "independent",
+    
+    # Gaussian blur
+    "gblur_sigma_low"    : 1,
+    "gblur_sigma_high"   : 2,
+    "gblur_chn"          : "shared",
+    
+    # Noise
+    "noise_gain_low"     : 30,
+    "noise_gain_high"    : 60,
+    "noise_std_low"      : 3,
+    "noise_std_high"     : 6,
+    "noise_chn"          : "independent",
+    
+    # Grid distort
+    "distort_steps_low"  : 1,
+    "distort_steps_high" : 10,
+    "distort_limit_low"  : 0.1,
+    "distort_limit_high" : 0.5,
+        
+    },
+
+    }
+
+#%% Class(TrainSPKClasses) ----------------------------------------------------
+
+class TrainSPKClasses:
+    def __init__(self, main, parameters=None, model_parameters=None):
+        self.main = main
+        self.parameters = parameters
+        self.model_parameters = model_parameters
+        self.parameters = parameters | main.parameters
+        for key, val in self.parameters.items():
+            if not isinstance(val, dict):
+                setattr(self, key, val)
+                
+        # Run
+        if self.run_classify:
+            ClassifySPK(self.main) 
+        if self.run_crops:
+            self.extract_crops()
+        if self.run_train:
+            self.train()
+                        
+#%% Class(TrainSPKClasses) : extract_crops() ----------------------------------
+
+    def extract_crops(self):
+
+        spk_crp = []
+        spk_cls = {"vws_path" : [], "c" : [], "y" : [], "x" : []}
+        for p, vws_path in enumerate(self.main.vws_paths):
+                                
+            # Paths
+            spk_cls_path = vws_path / "speckle_classes.pkl"
+            stk_nrm_path = vws_path / "stack_norm.tif"
+            
+            if spk_cls_path.exists():
+                
+                # Log
+                t0i = time.time()
+                log_str = f"TrainSPKClasses() : extract_crops() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))
+            
+                # Load --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                with open(spk_cls_path, "rb") as file:
+                    _spk_cls = pickle.load(file)    
+                stk_nrm = io.imread(stk_nrm_path)
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - load")
+                
+                # Get crops ---------------------------------------------------
+                
+                t0 = time.time()
+                
+                # Append spk_cls
+                n = len(_spk_cls["c"])
+                spk_cls["vws_path"].extend([vws_path] * n)
+                spk_cls["c"].extend(_spk_cls["c"])
+                spk_cls["y"].extend(_spk_cls["y"])
+                spk_cls["x"].extend(_spk_cls["x"])
+                
+                # Get speckle centroids
+                spk_ctd = np.column_stack((
+                    _spk_cls["y"], _spk_cls["x"]
+                    )).astype(int)                
+                self.spk_ctd = spk_ctd
+                
+                # Get crops
+                spk_crp.append(get_crops(
+                    stk_nrm, spk_ctd, 
+                    crop_size=self.crop_size, 
+                    crop_fraction=None, 
+                    stk_level=self.stk_level,
+                    ))
+
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - get crops")
+                
+                t1f = time.time()
+                print(f"> {t1f - t0i:.3f}s")
+                
+        # Save ----------------------------------------------------------------
+                
+        # # Log
+        # t0 = time.time()
+        # log_str = "TrainSPKClasses() : extract_crops() : save all"
+        # print("-" * len(log_str))
+        # print(log_str)
+        # print("-" * len(log_str))
+        
+        # t0 = time.time()
+
+        # with open(self.train_path / "spk_cls.pkl", "wb") as file:
+        #     pickle.dump(spk_cls, file)
+        # spk_crp = np.concatenate(spk_crp, axis=0)
+        # io.imsave(spk_crp, self.train_path / "spk_crp.tif")
+        
+        # t1 = time.time()
+        # print(f"> {t1 - t0:.3f}s")
+                
+
+        
+#%% Class(TrainSPKClasses) : train() ------------------------------------------
+
+    def train(self):
+        
+        # Paths
+        root_paths = [self.train_path, self.train_path / "stock_in"]
+        
+        # Load data
+        ncl_cls = None
+        for r, root_path in enumerate(root_paths):
+            ncl_cls_path = root_path / "ncl_cls.pkl"
+            spk_crp_path = root_path / "spk_crp.npz"
+            if ncl_cls_path.exists():
+                with open(ncl_cls_path, "rb") as file:
+                    ncl_cls_tmp = pickle.load(file)
+                    spk_crp_tmp = load_compressed_stack(spk_crp_path)
+                    if ncl_cls is None:
+                        ncl_cls = ncl_cls_tmp
+                        spk_crp = spk_crp_tmp
+                    else:
+                        ncl_cls = np.concatenate((ncl_cls, ncl_cls_tmp), axis=0)
+                        spk_crp = np.concatenate((spk_crp, spk_crp_tmp), axis=0)
+        
+        # Prepare data
+        ncl_cls = ncl_cls - 1 # class 1 (other) = 0
+        crp_prc = get_crops_processed(spk_crp)
+        
+        # Setup model
+        self.model = Model(parameters=self.model_parameters, model_path=None)
+        
+        # Train model
+        self.model.train(crp_prc, y=ncl_cls)
+            
+#%% Execute -------------------------------------------------------------------
+
+if __name__ == "__main__":
+    main = Main(parameters=main_parameters)
+    train = TrainSPKClasses(
+        main, parameters=parameters, model_parameters=model_parameters)  
+    spk_ctd = train.spk_ctd
+    
+#%% Predict -------------------------------------------------------------------
+
+    # # Paths
+    # vws_idx = 15
+    # vws_path = main.vws_paths[vws_idx]
+    # stk_nrm_path = vws_path / "stack_norm.npz" 
+    # ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+    
+    # # Load model
+    # model_path = Path(Path.cwd(), "model-cls_12_2_6_5045-8190b")
+    # model = Model(parameters=None, model_path=model_path)
+    
+    # # Load data
+    # with open(ncl_ctd_path, "rb") as file:
+    #     ncl_ctd = pickle.load(file)   
+    # stk_nrm = load_compressed_stack(stk_nrm_path)
+    
+    # # Get crops
+    # spk_crp = get_crops(
+    #     stk_nrm, ncl_ctd, 
+    #     crop_size=parameters["crop_size"],
+    #     stk_level=parameters["stk_level"],
+    #     )
+    # spk_crp = prepare_crops(spk_crp)
+        
+    # # Predict
+    # prds = model.predict(spk_crp)  
+    # prds = np.argmax(prds, axis=1)
+    # prds += 1
+
+#%% Display -------------------------------------------------------------------
+    
+    # import napari
+    
+    # # Maps
+    
+    # colors = [
+    #     "gray", "yellow", "green",
+    #     "red", "orange",
+    #     "cyan", "magenta",
+    #     ]
+    
+    # names = [
+    #     "NaN", "Other", "Epithelium",
+    #     "Neutrophil", "Macrophage", 
+    #     "B cell", "T cell", 
+    #     ]
+    
+    # class_map = {
+    #     "cls_nan" : {"tag" : 0, "color" : colors[0], "name" : names[0]},
+    #     "cls_oth" : {"tag" : 1, "color" : colors[1], "name" : names[1]},
+    #     "cls_epi" : {"tag" : 2, "color" : colors[2], "name" : names[2]},
+    #     "cls_neu" : {"tag" : 3, "color" : colors[3], "name" : names[3]},
+    #     "cls_mac" : {"tag" : 4, "color" : colors[4], "name" : names[4]},
+    #     "cls_bcl" : {"tag" : 5, "color" : colors[5], "name" : names[5]},
+    #     "cls_tcl" : {"tag" : 6, "color" : colors[6], "name" : names[6]},
+    #     }
+    
+    # color_map = {
+    #     v["tag"]: v["color"] for v in class_map.values()}
+    
+    # ncl_ctd = np.column_stack((
+    #     ncl_ctd["y"][parameters["stk_level"]],
+    #     ncl_ctd["x"][parameters["stk_level"]],
+    #     ))
+    
+    # # -------------------------------------------------------------------------    
+    
+    # vwr = napari.Viewer()
+    # vwr.add_image(
+    #     stk_nrm, name="stk_nrm", visible=1,
+    #     gamma=0.75, 
+    #     )
+            
+    # vwr.add_points(
+    #     ncl_ctd, name="points", visible=1,
+    #     blending="translucent", size=8, border_width=0.0,
+    #     features={"class_label": prds},
+    #     face_color="class_label",
+    #     face_color_cycle=color_map,
+    #     opacity=0.5, 
+    #     )
