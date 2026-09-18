@@ -11,14 +11,14 @@ from pathlib import Path
 
 # functions
 from functions import (
-    norm_data, 
+    imread_channel, norm_data, 
     get_slide_metadata, load_view, 
     get_preview_processed, get_preview_stats,
-    get_nuclei_mask, get_nuclei_centroids, 
+    get_obj_mask, get_obj_properties, 
     get_nuclei_stats, format_nuclei_stats,
-    get_asc_mask, get_asc_stats, format_asc_stats,
+    get_asc_stats, format_asc_stats,
     get_asc_distances, format_asc_distances,
-    get_crops, get_crops_processed,
+    get_obj_crops, get_crops_processed,
     plot,
     )
 
@@ -34,7 +34,7 @@ main_parameters = {
 
     # Procedure
     "force_extract"         : 0,
-    "force_predict_nuclei"  : 0,
+    "force_predict_nuclei"  : 1,
     "force_predict_asc"     : 1,
     "force_predict_classes" : 0,
     "force_measure"         : 0,
@@ -55,15 +55,18 @@ main_parameters = {
     "ncl_level"             : 0,
     "ncl_thresh_0"          : 0.25,
     "ncl_thresh_1"          : 0.50,
+    "ncl_min_size"          : 8,
     
     # predict_asc()
     "asc_level"             : 0,
-    "asc_thresh"            : 0.2,
-    "min_dist"              : 5,   
-    "min_int"               : 0.08, 
-    "radius"                : 5, 
-    "sigma"                 : 1.0, 
-    "min_corr"              : 0.8, 
+    "asc_thresh_0"          : 0.25,
+    "asc_thresh_1"          : None,
+    "asc_min_size"          : 8,   
+    
+    # "min_int"               : 0.08, 
+    # "radius"                : 5, 
+    # "sigma"                 : 1.0, 
+    # "min_corr"              : 0.8, 
     
     # Measure()
     "crop_size"             : 64, # in pixels at stk_level = 0
@@ -242,11 +245,12 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
+            stk_nrm_path = vws_path / "stack_norm.tif"
             ncl_msk_path = vws_path / "nuclei_mask.tif"
-            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
+            ncl_prp_path = vws_path / "nuclei_properties.pkl"
             roi_idx = int(vws_path.stem[-2:])
 
-            if ((self.force_predict_nuclei > 0 and not ncl_ctd_path.exists()) 
+            if ((self.force_predict_nuclei > 0 and not ncl_prp_path.exists()) 
                 or self.force_predict_nuclei == 2):
                        
                 # Log
@@ -270,11 +274,11 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
-                ncl_raw = load_view(
+                ncl_nrm = load_view(
                     qpt_path, metadata=mtd, channels="DAPI", 
                     level=self.ncl_level, roi_idx=roi_idx,
                     )
-                ncl_nrm = norm_data(ncl_raw, pvw_sts, channel="DAPI")
+                ncl_nrm = norm_data(ncl_nrm, pvw_sts, channel="DAPI")
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
@@ -293,25 +297,23 @@ class Main:
     
                 t0 = time.time()
     
-                ncl_msk = get_nuclei_mask(
+                ncl_msk = get_obj_mask(
                     ncl_prd, 
                     thresh_0=self.ncl_thresh_0, 
                     thresh_1=self.ncl_thresh_1, 
-                    ncl_level=self.ncl_level,
+                    min_size=self.ncl_min_size,
+                    prd_level=self.ncl_level,
                     )
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - get mask")
-    
-                # Get centroids -----------------------------------------------
+                
+                # Get properties ----------------------------------------------
     
                 t0 = time.time()
-                               
-                ncl_ctd = get_nuclei_centroids(
-                    ncl_msk, 
-                    n_levels=len(mtd["level"]), 
-                    ncl_level=self.ncl_level,
-                    )
+                
+                ncl_nrm = imread_channel(stk_nrm_path, channel_idx=0)              
+                ncl_prp = get_obj_properties(ncl_nrm, ncl_msk)
 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - get centroids")
@@ -320,11 +322,16 @@ class Main:
                 
                 t0 = time.time()
                 
-                with open(ncl_ctd_path, "wb") as file:
-                    pickle.dump(ncl_ctd, file)
+                # io.imsave(
+                #     ncl_msk_path, 
+                #     (ncl_msk * 255).astype("uint8"),
+                #     check_contrast=False,
+                #     )
+                with open(ncl_prp_path, "wb") as file:
+                    pickle.dump(ncl_prp, file)
     
                 # Clear
-                del ncl_raw, ncl_nrm, ncl_prd, ncl_msk, ncl_ctd
+                del ncl_nrm, ncl_prd, ncl_msk, ncl_prp
                 tf.keras.backend.clear_session()
                 gc.collect()
                 
@@ -344,11 +351,9 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
-            pvw_msk_path = vws_path / "preview_mask.tif"
             stk_nrm_path = vws_path / "stack_norm.tif"
             asc_msk_path = vws_path / "asc_mask.tif"
-            asc_prc_path = vws_path / "asc_processed.tif"
-            asc_dsp_path = vws_path / "asc_display.tif"
+            asc_prp_path = vws_path / "asc_properties.pkl"
             roi_idx = int(vws_path.stem[-2:])
             
             if ((self.force_predict_asc > 0 and not asc_msk_path.exists()) 
@@ -375,14 +380,11 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
-                pvw_msk = io.imread(pvw_msk_path)
-                stk_nrm = io.imread(stk_nrm_path)
-                asc_raw = load_view(
+                asc_nrm = load_view(
                     qpt_path, metadata=mtd, channels="ASC", 
                     level=self.asc_level, roi_idx=roi_idx,
                     )
-                
-                asc_nrm = norm_data(asc_raw, pvw_sts, channel="ASC")
+                asc_nrm = norm_data(asc_nrm, pvw_sts, channel="ASC")
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
@@ -401,37 +403,41 @@ class Main:
     
                 t0 = time.time()
     
-                asc_nrm = stk_nrm[4, ...].astype("float32") / 255
-                asc_msk, asc_prc = get_asc_mask(
-                    asc_nrm, asc_prd, pvw_msk, 
-                    asc_thresh=self.asc_thresh, 
-                    pvw_level=self.pvw_level,
-                    stk_level=self.stk_level, 
-                    asc_level=self.asc_level,
+                asc_msk = get_obj_mask(
+                    asc_prd, 
+                    thresh_0=self.asc_thresh_0, 
+                    thresh_1=self.asc_thresh_1,
+                    min_size=self.asc_min_size,
+                    prd_level=self.asc_level,
                     )
                     
                 t1 = time.time()
-                print(f"{t1 - t0:.3f}s - process")   
+                print(f"{t1 - t0:.3f}s - process")  
+                
+                # Get properties ----------------------------------------------
+    
+                t0 = time.time()
+                               
+                asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)    
+                asc_prp = get_obj_properties(asc_nrm, asc_msk)
+
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - get centroids")
                 
                 # Save --------------------------------------------------------
                 
                 t0 = time.time()
                 
-                io.imsave(
-                    asc_msk_path, 
-                    asc_msk * 100,
-                    check_contrast=False,
-                    )
-                io.imsave(
-                    asc_prc_path, 
-                    (asc_prc * 255).astype("uint8"),
-                    check_contrast=False,
-                    )
-                
-                asc_prc_path
+                # io.imsave(
+                #     asc_msk_path, 
+                #     (asc_msk * 255).astype("uint8"),
+                #     check_contrast=False,
+                #     )
+                with open(asc_prp_path, "wb") as file:
+                    pickle.dump(asc_prp, file)
                 
                 # Clear
-                del asc_raw, asc_nrm, asc_prd, asc_msk, asc_prc
+                del asc_nrm, asc_prd, asc_msk, asc_prp
                 tf.keras.backend.clear_session()
                 gc.collect()
                 
@@ -827,6 +833,144 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)    
+    
+       
+#%% 
+
+    # stk_nrm_path = main.stk_nrm_path
+    # ncl_msk = main.ncl_msk
+
+    # import tifffile
+    # from skimage.measure import label, regionprops_table
+
+    # def imread_channel(path, channel_idx=0, normalize=True):
+    #     img_memmap = tifffile.memmap(path)
+    #     img = img_memmap[channel_idx, :, :]
+    #     if normalize:
+    #         return img.astype("float32") / 255
+    #     else:
+    #         return img
+    
+    # def get_obj_properties(nrm, msk):
+
+    #     props = regionprops_table(
+    #         label(msk), intensity_image=nrm, 
+    #         properties=(
+    #             "area", "coords", "centroid", "eccentricity",
+    #             "intensity_max", "intensity_min",
+    #             "intensity_mean", "intensity_std",
+    #             ),
+    #         )
+
+    #     return {
+    #         "y"      : list(props["centroid-0"].astype("uint16")),  
+    #         "x"      : list(props["centroid-1"].astype("uint16")),  
+    #         "area"   : list(props["area"].astype("uint16")), 
+    #         "coords" : [coord.astype("uint16") for coord in props["coords"]], 
+    #         "eccentricity"   : list(props["eccentricity"].astype("float32")), 
+    #         "intensity_max"  : list(props["intensity_max"].astype("float32")),  
+    #         "intensity_min"  : list(props["intensity_min"].astype("float32")), 
+    #         "intensity_mean" : list(props["intensity_mean"].astype("float32")), 
+    #         "intensity_std"  : list(props["intensity_std"].astype("float32")), 
+    #         }       
+            
+    # ncl_nrm = imread_channel(stk_nrm_path, channel_idx=0)
+    # ncl_prp = get_obj_properties(ncl_nrm, ncl_msk)
+    
+    # ncl_prp_path = Path("ncl_prp.pkl")
+    # with open(ncl_prp_path, "wb") as file:
+    #     pickle.dump(ncl_prp, file)
+    
+    # vwr = napari.Viewer()
+    # vwr.add_image(
+    #     rescale(ncl_nrm, rf), colormap="gray",
+    #     gamma=0.5, opacity=0.75,
+    #     )
+    # vwr.add_image(
+    #     ncl_msk, colormap="bop orange",
+    #     blending="additive", opacity=0.5,
+    #     )
+    
+#%%
+    
+    # # bdtools
+    # from bdtools.conn import lbl_conn
+
+    # # skimage
+    # from skimage.transform import rescale
+    # from skimage.segmentation import watershed
+    # from skimage.morphology import remove_small_objects
+    # from skimage.measure import label, regionprops_table
+
+    # def get_obj_mask(
+    #         prd, thresh_0=0.25, thresh_1=0.50, min_size=8, 
+    #         prd_level=0, msk_level=1,
+    #         ):
+        
+    #     # Initialize
+    #     rf = 1 / (2 ** (msk_level - prd_level))
+    #     min_size = min_size // ((2 ** msk_level) ** 2) 
+        
+    #     # Rescale prediction (if required)
+    #     if rf != 1: 
+    #         prd = rescale(prd, rf)
+            
+    #     # Get mask
+    #     if thresh_1 is not None:
+    #         msk_0 = prd > thresh_0
+    #         msk_1 = prd > thresh_1
+    #         msk = watershed(-prd, label(msk_1), mask=msk_0)
+    #         msk[lbl_conn(msk, conn=2) == 2] = 0
+    #         msk = msk > 0
+    #     else:
+    #         msk = prd > thresh_0
+        
+    #     # Remove small objects
+    #     if min_size > 0:
+    #         msk = remove_small_objects(msk, min_size=min_size)
+        
+    #     return msk
+    
+    # def get_obj_centroids(msk, n_levels=5, msk_level=0):
+    #     props = regionprops_table(label(msk), properties=("label", "centroid"))
+    #     y, x = props["centroid-0"], props["centroid-1"]
+    #     ctd = {"y" : [], "x" : []}
+    #     for level in range(n_levels):
+    #         factor = 2 ** (msk_level - level)
+    #         ctd["y"].append(y * factor)
+    #         ctd["x"].append(x * factor)
+    #     return ctd
+
+    # ncl_msk = get_obj_mask(
+    #     ncl_prd, 
+    #     thresh_0=main_parameters["ncl_thresh_0"], 
+    #     thresh_1=main_parameters["ncl_thresh_1"], 
+    #     min_size=main_parameters["ncl_min_size"],
+    #     prd_level=main_parameters["ncl_level"],
+    #     )
+    
+    # ncl_ctd = get_obj_centroids(
+    #     ncl_msk, 
+    #     n_levels=len(mtd["level"]), 
+    #     msk_level=main_parameters["ncl_level"],
+    #     )
+        
+    # # Display
+    # import napari
+    # rf = 1 / (2 ** (main_parameters["stk_level"] - main_parameters["ncl_level"]))
+    
+    # vwr = napari.Viewer()
+    # vwr.add_image(
+    #     rescale(ncl_nrm, rf), colormap="gray",
+    #     gamma=0.5, opacity=0.75,
+    #     )
+    # vwr.add_image(
+    #     ncl_msk, colormap="bop orange",
+    #     blending="additive", opacity=0.5,
+    #     )
+   
+    
+#%%
     
     # data_path = main_parameters["data_path"]
     # vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"

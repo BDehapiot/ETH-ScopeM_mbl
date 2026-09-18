@@ -20,9 +20,9 @@ from qtpy.QtWidgets import (
     QPushButton, QRadioButton, QWidget, QLabel,
     )
 
-#%% Class : ClassifySPK() -----------------------------------------------------
+#%% Class : AnnotateSPK() -----------------------------------------------------
 
-class ClassifySPK:
+class AnnotateSPK:
     def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
@@ -39,7 +39,7 @@ class ClassifySPK:
         self.init_viewer()
         self.init_layers()
         
-#%% Class(ClassifySPK) : initialize() -----------------------------------------
+#%% Class(AnnotateSPK) : initialize() -----------------------------------------
 
     def initialize(self):
         
@@ -47,7 +47,7 @@ class ClassifySPK:
         self.mtd_paths = self.main.mtd_paths
         self.vws_paths = self.main.vws_paths
         
-#%% Class(ClassifySPK) : function(s) ------------------------------------------
+#%% Class(AnnotateSPK) : function(s) ------------------------------------------
 
     # Logic & updates ---------------------------------------------------------
             
@@ -139,7 +139,7 @@ class ClassifySPK:
         self.vwr.layers["spk_msk"].visible = 1
         self.vwr.layers["spk_slc"].visible = 1
         
-#%% Class(ClassifySPK) : init_viewer() ----------------------------------------        
+#%% Class(AnnotateSPK) : init_viewer() ----------------------------------------        
 
     def init_viewer(self):
             
@@ -190,7 +190,7 @@ class ClassifySPK:
         self.cls_add.toggled.connect(self.add_spk)
         self.cls_rmv.toggled.connect(self.rmv_spk)
         
-#%% Class(ClassifySPK) : shortcuts -------------------------------------------- 
+#%% Class(AnnotateSPK) : shortcuts -------------------------------------------- 
 
         @self.vwr.bind_key("PageDown", overwrite=True)
         def _prev_view(vwr):
@@ -223,7 +223,7 @@ class ClassifySPK:
                 yield
                 self.vwr.layers["spk_slc"].mode = "paint"
         
-#%% Class(ClassifySPK) : init_layers() ----------------------------------------
+#%% Class(AnnotateSPK) : init_layers() ----------------------------------------
 
     def init_layers(self):  
         
@@ -266,5 +266,5 @@ class ClassifySPK:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    classSPK = ClassifySPK(main)
-    spk_cls = classSPK.spk_cls
+    annSPK = AnnotateSPK(main)
+    spk_cls = annSPK.spk_cls

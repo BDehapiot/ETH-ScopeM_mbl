@@ -1,5 +1,6 @@
 #%% Imports -------------------------------------------------------------------
 
+import tifffile
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -23,7 +24,15 @@ from skimage.morphology import disk, binary_closing, remove_small_objects
 from scipy.stats import pearsonr
 from scipy.ndimage import distance_transform_edt
        
-#%% function(s) : compression -------------------------------------------------
+#%% function(s) : save & load -------------------------------------------------
+
+def imread_channel(path, channel_idx=0, normalize=True):
+    img_memmap = tifffile.memmap(path)
+    img = img_memmap[channel_idx, :, :]
+    if normalize:
+        return img.astype("float32") / 255
+    else:
+        return img
 
 def save_compressed_mask(arr, path):
     arr_bin = np.packbits(arr > 0)        
@@ -233,16 +242,60 @@ def get_preview_stats(pvw_raw, pvw_msk, channels):
 
 #%% function(s) : get_obj_mask() ----------------------------------------------
 
-def get_nuclei_mask(prd, thresh_0=0.25, thresh_1=0.50, prd_level=0):
-    msk_0 = prd > thresh_0
-    msk_1 = prd > thresh_1
-    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
-    msk[lbl_conn(msk, conn=2) == 2] = 0
-    if ncl_level == 0: min_size = 8
-    if ncl_level == 1: min_size = 2
-    if ncl_level >= 2: min_size = 1
-    msk = remove_small_objects(msk, min_size=min_size)
-    return msk > 0
+def get_obj_mask(
+        prd, thresh_0=0.25, thresh_1=0.50, min_size=8, 
+        prd_level=0, msk_level=1,
+        ):
+    
+    # Initialize
+    rf = 1 / (2 ** (msk_level - prd_level))
+    min_size = min_size // ((2 ** msk_level) ** 2) 
+    
+    # Rescale prediction (if required)
+    if rf != 1: 
+        prd = rescale(prd, rf)
+        
+    # Get mask
+    if thresh_1 is not None:
+        msk_0 = prd > thresh_0
+        msk_1 = prd > thresh_1
+        msk = watershed(-prd, label(msk_1), mask=msk_0)
+        msk[lbl_conn(msk, conn=2) == 2] = 0
+        msk = msk > 0
+    else:
+        msk = prd > thresh_0
+    
+    # Remove small objects
+    if min_size > 0:
+        msk = remove_small_objects(msk, min_size=min_size)
+    
+    return msk
+
+#%% function(s) : get_obj_properties() ----------------------------------------
+
+def get_obj_properties(nrm, msk):
+
+    props = regionprops_table(
+        label(msk), intensity_image=nrm, 
+        properties=(
+            "centroid", "area", 
+            "coords", "eccentricity",
+            "intensity_max", "intensity_min",
+            "intensity_mean", "intensity_std",
+            ),
+        )
+
+    return {
+        "y"      : list(props["centroid-0"].astype("uint16")),  
+        "x"      : list(props["centroid-1"].astype("uint16")),  
+        "area"   : list(props["area"].astype("uint16")), 
+        "coords" : [coord.astype("uint16") for coord in props["coords"]], 
+        "eccentricity"   : list(props["eccentricity"].astype("float32")), 
+        "intensity_max"  : list(props["intensity_max"].astype("float32")),  
+        "intensity_min"  : list(props["intensity_min"].astype("float32")), 
+        "intensity_mean" : list(props["intensity_mean"].astype("float32")), 
+        "intensity_std"  : list(props["intensity_std"].astype("float32")), 
+        }  
 
 #%% function(s) : get_obj_crops() ---------------------------------------------
 
@@ -286,27 +339,6 @@ def get_crops_processed(crp):
     
 #%% function(s) : nuclei ------------------------------------------------------
     
-def get_nuclei_mask(ncl_prd, thresh_0=0.25, thresh_1=0.50, ncl_level=0):
-    msk_0 = ncl_prd > thresh_0
-    msk_1 = ncl_prd > thresh_1
-    msk = watershed(-ncl_prd, label(msk_1), mask=msk_0)
-    msk[lbl_conn(msk, conn=2) == 2] = 0
-    if ncl_level == 0: min_size = 8
-    if ncl_level == 1: min_size = 2
-    if ncl_level >= 2: min_size = 1
-    msk = remove_small_objects(msk, min_size=min_size)
-    return msk > 0
-
-def get_nuclei_centroids(ncl_msk, n_levels=5, ncl_level=0):
-    props = regionprops_table(label(ncl_msk), properties=("label", "centroid"))
-    y, x = props["centroid-0"], props["centroid-1"]
-    ctd = {"y" : [], "x" : []}
-    for level in range(n_levels):
-        factor = 2 ** (ncl_level - level)
-        ctd["y"].append(y * factor)
-        ctd["x"].append(x * factor)
-    return ctd
-
 def get_nuclei_stats(crp, channels):        
     ncl_sts = {"avg" : {}, "std" : {}}
     for c, chn in enumerate(channels):
@@ -353,35 +385,6 @@ def format_nuclei_stats(
     ncl_dfan = mean_norm(ncl_dfa)
         
     return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
-
-#%% function(s) : get_asc_mask() ----------------------------------------------
-
-def get_asc_mask(
-        asc_nrm, asc_prd, pvw_msk, asc_thresh=0.05, 
-        pvw_level=4, stk_level=1, asc_level=0,
-        ):
-    
-    # Rescale
-    rf = 1 / (2 ** (stk_level - asc_level))
-    asc_prd = rescale(asc_prd, rf)
-    rf = 1 / (2 ** (stk_level - pvw_level))
-    pvw_msk = rescale(pvw_msk, rf, order=0)
-    
-    # Get mask
-    asc_msk = asc_prd > asc_thresh
-    asc_prc = asc_nrm.copy()
-    asc_prc[asc_msk == 0] = 0
-    
-    # Separate speckles from blobs
-    asc_msk = remove_small_objects(asc_msk, min_size=4)
-    spk_msk = asc_msk != remove_small_objects(asc_msk, min_size=32)
-    
-    # Update asc mask
-    asc_msk = asc_msk.astype("uint8")
-    asc_msk[spk_msk] = 2
-    asc_msk[pvw_msk == 0] = 0
-    
-    return asc_msk, asc_prc
 
 #%% function(s) : asc ---------------------------------------------------------
 
