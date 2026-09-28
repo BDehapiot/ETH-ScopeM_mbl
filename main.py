@@ -356,7 +356,7 @@ class Main:
             asc_prp_path = vws_path / "asc_properties.pkl"
             roi_idx = int(vws_path.stem[-2:])
             
-            if ((self.force_predict_asc > 0 and not asc_msk_path.exists()) 
+            if ((self.force_predict_asc > 0 and not asc_prp_path.exists()) 
                 or self.force_predict_asc == 2):
                                 
                 # Log
@@ -834,6 +834,33 @@ class Main:
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)    
     
+#%%
+
+    def get_mask_from_props(prp, shape=(2048, 2048)):
+        msk = np.zeros(shape, dtype=bool)
+        for coords in prp["coords"]:
+            msk[tuple(coords.T)] = True
+        return msk
+
+    # -------------------------------------------------------------------------    
+
+    # Paths
+    vws_path = main.vws_paths[0]
+    stk_nrm_path = vws_path / "stack_norm.tif"
+    ncl_prp_path = vws_path / "nuclei_properties.pkl"
+    
+    # Load
+    stk_nrm = io.imread(stk_nrm_path)
+    with open(ncl_prp_path, "rb") as file:
+        ncl_prp = pickle.load(file)
+        
+    # Get mask
+    ncl_msk = get_mask_from_props(ncl_prp, shape=stk_nrm[0, ...].shape)
+    
+    # Display
+    import napari
+    vwr = napari.Viewer()
+    vwr.add_image(ncl_msk, colormap="gray")
        
 #%% 
 

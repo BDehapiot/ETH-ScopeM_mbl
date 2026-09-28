@@ -3,12 +3,12 @@
 import napari
 import pickle
 import numpy as np
+import pandas as pd
 from skimage import io
-from pathlib import Path
 from main import Main, main_parameters
 
 # functions
-from functions import load_compressed_stack
+from functions import get_mask_from_props
 
 # Qt
 from qtpy.QtGui import QFont
@@ -17,9 +17,9 @@ from qtpy.QtWidgets import (
     QPushButton, QWidget, QLabel,
     )
 
-#%% Class : Classify() --------------------------------------------------------
+#%% Class : AnnotateNCL() --------------------------------------------------------
 
-class Classify:
+class AnnotateNCL:
     def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
@@ -36,7 +36,7 @@ class Classify:
         self.init_viewer()
         self.init_layers()
         
-#%% Class(Classify) : initialize() --------------------------------------------
+#%% Class(AnnotateNCL) : initialize() --------------------------------------------
 
     def initialize(self):
         
@@ -59,7 +59,7 @@ class Classify:
         self.color_map = {
             v["tag"]: v["color"] for v in self.class_map.values()}
                 
-#%% Class(Classify) : function(s) ----------------------------------------------
+#%% Class(AnnotateNCL) : function(s) ----------------------------------------------
 
     # Logic & updates ---------------------------------------------------------
             
@@ -67,36 +67,36 @@ class Classify:
         
         # Paths
         vws_path = self.vws_paths[self.vws_idx]
-        ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-        ncl_ann_path = vws_path / "nuclei_classes_annotations.pkl"
-        stk_raw_path = vws_path / "stack_norm.tif"
+        stk_nrm_path = vws_path / "stack_norm.tif"
+        ncl_prp_path = vws_path / "nuclei_properties.pkl"
+        self.ncl_cls_path = vws_path / "nuclei_classes.pkl"
         
         # Load data
-        with open(ncl_ctd_path, "rb") as file:
-            self.ncl_ctd = pickle.load(file)
-            self.ncl_ctd = np.column_stack((
-                self.ncl_ctd["y"][self.stk_level],
-                self.ncl_ctd["x"][self.stk_level],
-                ))
-        self.stk_raw = io.imread(stk_raw_path)
+        self.stk_nrm = io.imread(stk_nrm_path)
+        with open(ncl_prp_path, "rb") as file:
+            self.ncl_prp = pickle.load(file)
+        self.ncl_msk = get_mask_from_props(
+            self.ncl_prp, shape=self.stk_nrm[0, ...].shape)
+        self.ncl_ctd = np.column_stack((
+            self.ncl_prp["y"], self.ncl_prp["x"]))
         
         # Load nuclei classes (if exists)
-        if not ncl_ann_path.exists():
-            self.ncl_ann = np.full(self.ncl_ctd.shape[0], 0)
+        if not self.ncl_cls_path.exists():
+            self.ncl_cls = np.full(self.ncl_ctd.shape[0], 0)
         else:
-            with open(ncl_ann_path, "rb") as file:
-                self.ncl_ann = pickle.load(file)
+            with open(self.ncl_cls_path, "rb") as file:
+                self.ncl_cls = pickle.load(file)
                         
     def auto_contrast(self):
-        img = self.vwr.layers["image"].data 
+        img = self.vwr.layers["stk_nrm"].data 
         v0 = np.percentile(img, 0.01)
         v1 = np.percentile(img, 99.99)
-        self.vwr.layers["image"].contrast_limits = [v0, v1]
+        self.vwr.layers["stk_nrm"].contrast_limits = [v0, v1]
 
     def update_view(self):
         self.load_data()
-        self.vwr.layers["image" ].data = self.stk_raw
-        self.vwr.layers["points"].data = self.ncl_ctd
+        self.vwr.layers["stk_nrm"].data = self.ncl_nrm
+        self.vwr.layers["points" ].data = self.ncl_ctd
         self.update_classes(0)
         self.auto_contrast()
         
@@ -117,15 +117,11 @@ class Classify:
         self.update_view()
         
     def update_classes(self, tag):
-        
-        # Paths
-        vws_path = self.vws_paths[self.vws_idx]
-        ncl_ann_path = vws_path / "nuclei_classes_annotations.pkl"
-        
+                
         # Fetch & update selected points
         idxs = list(self.vwr.layers["points"].selected_data)
-        self.ncl_ann[idxs] = tag
-        self.vwr.layers["points"].features["class_label"] = self.ncl_ann
+        self.ncl_cls[idxs] = tag
+        self.vwr.layers["points"].features["class_label"] = self.ncl_cls
         self.vwr.layers["points"].refresh_colors()
         self.vwr.layers["points"].selected_data = set()
         self.get_info()
@@ -134,10 +130,10 @@ class Classify:
             return    
         
         # Save
-        with open(ncl_ann_path, "wb") as file:
-            pickle.dump(self.ncl_ann, file)
+        with open(self.ncl_cls_path, "wb") as file:
+            pickle.dump(self.ncl_cls, file)
         
-#%% Class(Classify) : init_viewer() -------------------------------------------            
+#%% Class(AnnotateNCL) : init_viewer() -------------------------------------------            
 
     def init_viewer(self):
             
@@ -155,7 +151,7 @@ class Classify:
         self.vws_group_box.setLayout(self.vws_group_layout)
         
         # Create "classify" menu
-        self.cls_group_box = QGroupBox("Classify")
+        self.cls_group_box = QGroupBox("AnnotateNCL")
         self.cls_group_layout = QVBoxLayout()
         for key, val in self.class_map.items():
             setattr(self, key, QPushButton(val["class"]))
@@ -194,14 +190,14 @@ class Classify:
         # "update_channel()"
         self.vwr.dims.events.current_step.connect(self.update_channel)
                         
-#%% Class(Classify) : init_layers() -------------------------------------------
+#%% Class(AnnotateNCL) : init_layers() -------------------------------------------
 
     def init_layers(self):  
         
         self.load_data()
         
         self.vwr.add_image(
-            self.stk_raw, name="image", visible=1,
+            self.stk_nrm, name="stk_nrm", visible=1,
             opacity=0.6, gamma=0.6, 
             )
         self.auto_contrast()
@@ -209,14 +205,14 @@ class Classify:
         self.vwr.add_points(
             self.ncl_ctd, name="points", visible=1,
             blending="translucent", size=5, border_width=0.0,
-            features={"class_label": self.ncl_ann},
+            features={"class_label": self.ncl_cls},
             face_color="class_label",
             face_color_cycle=self.color_map,
             opacity=1.0, 
             )
         self.vwr.layers["points"].mode = "select"
                         
-#%% Class(Classify) : info() --------------------------------------------------
+#%% Class(AnnotateNCL) : info() --------------------------------------------------
 
     def get_info(self):
         
@@ -225,7 +221,7 @@ class Classify:
         classify_str = []
         for key, val in self.class_map.items():    
             classify_str.append(
-                f"{val['class']} : {np.sum(self.ncl_ann == val['tag'])}\n"
+                f"{val['class']} : {np.sum(self.ncl_cls == val['tag'])}\n"
                 )
         
         self.info.setText(
@@ -238,4 +234,4 @@ class Classify:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    classify = Classify(main)
+    annNCL = AnnotateNCL(main)

@@ -2,11 +2,12 @@
 
 import pickle
 import numpy as np
-from skimage import io
 from main import Main, main_parameters
 
+# functions
+from functions import imread_channel, get_mask_from_props
+
 # skimage
-from skimage.segmentation import flood
 from skimage.measure import label, regionprops_table
 
 # Napari
@@ -20,9 +21,9 @@ from qtpy.QtWidgets import (
     QPushButton, QRadioButton, QWidget, QLabel,
     )
 
-#%% Class : AnnotateSPK() -----------------------------------------------------
+#%% Class : AnnotateASC() -----------------------------------------------------
 
-class AnnotateSPK:
+class AnnotateASC:
     def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
@@ -39,7 +40,7 @@ class AnnotateSPK:
         self.init_viewer()
         self.init_layers()
         
-#%% Class(AnnotateSPK) : initialize() -----------------------------------------
+#%% Class(AnnotateASC) : initialize() -----------------------------------------
 
     def initialize(self):
         
@@ -47,7 +48,7 @@ class AnnotateSPK:
         self.mtd_paths = self.main.mtd_paths
         self.vws_paths = self.main.vws_paths
         
-#%% Class(AnnotateSPK) : function(s) ------------------------------------------
+#%% Class(AnnotateASC) : function(s) ------------------------------------------
 
     # Logic & updates ---------------------------------------------------------
             
@@ -56,58 +57,63 @@ class AnnotateSPK:
         # Paths
         vws_path = self.vws_paths[self.vws_idx]
         stk_nrm_path = vws_path / "stack_norm.tif"
-        asc_msk_path = vws_path / "asc_mask.tif"
-        self.spk_cls_path = vws_path / "speckle_classes.pkl"
+        asc_prp_path = vws_path / "asc_properties.pkl"
+        self.asc_cls_path = vws_path / "asc_classes.pkl"
         
         # Load data
-        self.asc_nrm = io.imread(stk_nrm_path)[4, ...]
-        self.asc_msk = io.imread(asc_msk_path)
-        self.spk_msk = (self.asc_msk == 200).astype("uint16")
-        self.spk_slc = np.zeros_like(self.asc_msk)
+        self.asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)
+        with open(asc_prp_path, "rb") as file:
+            self.asc_prp = pickle.load(file)
+        self.asc_msk = get_mask_from_props(
+            self.asc_prp, shape=self.asc_nrm.shape)
+        self.asc_slc = np.zeros_like(self.asc_msk, dtype="uint8")
         
         # Load speckle classes (if exists)
-        if not self.spk_cls_path.exists():
-            self.spk_cls = {"c" : [], "y" : [], "x" : []}
+        if not self.asc_cls_path.exists():
+            self.asc_cls = {
+                "y"      : [],
+                "x"      : [],
+                "coords" : [], 
+                "class"  : [],
+                }
         else:
-            with open(self.spk_cls_path, "rb") as file:
-                self.spk_cls = pickle.load(file)
+            with open(self.asc_cls_path, "rb") as file:
+                self.asc_cls = pickle.load(file)
                 
-            # Update spk_slc
-            for c, y, x in zip(*self.spk_cls.values()):
-                msk = flood(self.spk_msk, (y, x))
-                self.spk_slc[msk] = c
+            # Update asc_slc
+            for coords, clss in zip(*self.asc_cls.values()):
+                self.asc_slc[tuple(coords.T)] = clss
                 
     def update_mask(self):
         
-        # Update spk_slc
-        spk_msk = self.vwr.layers["spk_msk"].data
-        spk_slc = self.vwr.layers["spk_slc"].data
-        spk_slc[spk_msk == 0] = 0 
-        self.vwr.layers["spk_slc"].data = spk_slc
+        # Update asc_slc
+        asc_msk = self.vwr.layers["asc_msk"].data
+        asc_slc = self.vwr.layers["asc_slc"].data
+        asc_slc[asc_msk == 0] = 0 
+        self.vwr.layers["asc_slc"].data = asc_slc
         
-        # Update spk_cls
+        # Update asc_cls
         props = regionprops_table(
-            label(spk_slc > 0), 
-            intensity_image=spk_slc, 
-            properties=("label", "centroid", "intensity_max")
+            label(asc_slc > 0), 
+            intensity_image=asc_slc, 
+            properties=("label", "coords", "intensity_max")
             )
-        self.spk_cls["c"] = list(props["intensity_max"])
-        # self.spk_cls["y"] = list(props["centroid-0"])
-        # self.spk_cls["x"] = list(props["centroid-1"])
-        self.spk_cls["y"] = [round(y) for y in props["centroid-0"]]
-        self.spk_cls["x"] = [round(x) for x in props["centroid-1"]]
+        self.asc_cls["y"     ] = list(props["centroid-0"].astype("uint16")),  
+        self.asc_cls["x"     ] = list(props["centroid-1"].astype("uint16")),  
+        self.asc_cls["coords"] = list(props["coords"])
+        self.asc_cls["class" ] = [int(c) for c in props["intensity_max"]]
         
-        # Save spk_cls
-        with open(self.spk_cls_path, "wb") as file:
-            pickle.dump(self.spk_cls, file)
+        # Save asc_cls
+        with open(self.asc_cls_path, "wb") as file:
+            pickle.dump(self.asc_cls, file)
 
         self.get_info()
         
     def update_view(self):
         self.load_data()
         self.vwr.layers["asc_nrm"].data = self.asc_nrm
-        self.vwr.layers["spk_msk"].data = self.spk_msk
-        self.vwr.layers["spk_slc"].data = self.spk_slc
+        self.vwr.layers["asc_msk"].data = self.asc_msk
+        self.vwr.layers["asc_slc"].data = self.asc_slc
 
     # Buttons -----------------------------------------------------------------
     
@@ -124,22 +130,22 @@ class AnnotateSPK:
         self.get_info()
         
     def add_spk(self):
-        self.vwr.layers["spk_slc"].selected_label = 1
+        self.vwr.layers["asc_slc"].selected_label = 1
     
     def rmv_spk(self):
-        self.vwr.layers["spk_slc"].selected_label = 2
+        self.vwr.layers["asc_slc"].selected_label = 2
         
     # Shorcuts ----------------------------------------------------------------
         
     def hide_mask(self):
-        self.vwr.layers["spk_msk"].visible = 0
-        self.vwr.layers["spk_slc"].visible = 0
+        self.vwr.layers["asc_msk"].visible = 0
+        self.vwr.layers["asc_slc"].visible = 0
         
     def show_mask(self):
-        self.vwr.layers["spk_msk"].visible = 1
-        self.vwr.layers["spk_slc"].visible = 1
+        self.vwr.layers["asc_msk"].visible = 1
+        self.vwr.layers["asc_slc"].visible = 1
         
-#%% Class(AnnotateSPK) : init_viewer() ----------------------------------------        
+#%% Class(AnnotateASC) : init_viewer() ----------------------------------------        
 
     def init_viewer(self):
             
@@ -190,7 +196,7 @@ class AnnotateSPK:
         self.cls_add.toggled.connect(self.add_spk)
         self.cls_rmv.toggled.connect(self.rmv_spk)
         
-#%% Class(AnnotateSPK) : shortcuts -------------------------------------------- 
+#%% Class(AnnotateASC) : shortcuts -------------------------------------------- 
 
         @self.vwr.bind_key("PageDown", overwrite=True)
         def _prev_view(vwr):
@@ -202,9 +208,9 @@ class AnnotateSPK:
             
         @self.vwr.bind_key("0", overwrite=True)
         def pan_switch_key0(viewer):
-            self.vwr.layers["spk_slc"].mode = "pan_zoom"
+            self.vwr.layers["asc_slc"].mode = "pan_zoom"
             yield
-            self.vwr.layers["spk_slc"].mode = "paint"
+            self.vwr.layers["asc_slc"].mode = "paint"
 
         @self.vwr.bind_key("Delete", overwrite=True)
         def _hide_labels_key(viewer):
@@ -219,11 +225,11 @@ class AnnotateSPK:
         @self.vwr.mouse_drag_callbacks.append
         def mouse_actions(vwr, event):
             if event.button == 2:
-                self.vwr.layers["spk_slc"].mode = "erase"
+                self.vwr.layers["asc_slc"].mode = "erase"
                 yield
-                self.vwr.layers["spk_slc"].mode = "paint"
+                self.vwr.layers["asc_slc"].mode = "paint"
         
-#%% Class(AnnotateSPK) : init_layers() ----------------------------------------
+#%% Class(AnnotateASC) : init_layers() ----------------------------------------
 
     def init_layers(self):  
         
@@ -235,26 +241,26 @@ class AnnotateSPK:
             )
         
         self.vwr.add_image(
-            self.spk_msk, name="spk_msk", colormap="yellow", visible=1,
+            self.asc_msk, name="asc_msk", colormap="yellow", visible=1,
             blending="additive", opacity=0.25,
             )
         
         self.vwr.add_labels(
-            self.spk_slc, name="spk_slc", visible=1,
+            self.asc_slc, name="asc_slc", visible=1,
             blending="translucent", opacity=0.75, 
             )
         
-        self.vwr.layers["spk_slc"].selected_label = 1
-        self.vwr.layers["spk_slc"].brush_size = 10
-        self.vwr.layers["spk_slc"].mode = "paint"
+        self.vwr.layers["asc_slc"].selected_label = 1
+        self.vwr.layers["asc_slc"].brush_size = 10
+        self.vwr.layers["asc_slc"].mode = "paint"
         self.get_info()
 
 #%% Class(Classify) : info() --------------------------------------------------
 
     def get_info(self):
 
-        n_add = self.spk_cls["c"].count(1)
-        n_rmv = self.spk_cls["c"].count(2)
+        n_add = self.asc_cls["class"].count(1)
+        n_rmv = self.asc_cls["class"].count(2)
 
         self.info.setText(
             f"{self.vws_paths[self.vws_idx].name}\n"
@@ -266,5 +272,6 @@ class AnnotateSPK:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    annSPK = AnnotateSPK(main)
-    spk_cls = annSPK.spk_cls
+    annASC = AnnotateASC(main)
+    asc_prp = annASC.asc_prp
+    asc_cls = annASC.asc_cls

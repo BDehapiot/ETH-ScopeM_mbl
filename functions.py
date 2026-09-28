@@ -27,8 +27,10 @@ from scipy.ndimage import distance_transform_edt
 #%% function(s) : save & load -------------------------------------------------
 
 def imread_channel(path, channel_idx=0, normalize=True):
+    if isinstance(channel_idx, int):
+        channel_idx = [channel_idx]
     img_memmap = tifffile.memmap(path)
-    img = img_memmap[channel_idx, :, :]
+    img = img_memmap[channel_idx, :, :].squeeze()
     if normalize:
         return img.astype("float32") / 255
     else:
@@ -271,6 +273,12 @@ def get_obj_mask(
     
     return msk
 
+def get_mask_from_props(prp, shape=(2048, 2048)):
+    msk = np.zeros(shape, dtype=bool)
+    for coords in prp["coords"]:
+        msk[tuple(coords.T)] = True
+    return msk
+
 #%% function(s) : get_obj_properties() ----------------------------------------
 
 def get_obj_properties(nrm, msk):
@@ -299,16 +307,15 @@ def get_obj_properties(nrm, msk):
 
 #%% function(s) : get_obj_crops() ---------------------------------------------
 
-def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
+def get_obj_crops(stk, prp, crop_size=32, crop_fraction=None):
     
     # Pad (acc. to crop half size)
-    chs = crop_size // 2 # crop half size
-    pad_width = ((0, 0), (chs, chs), (chs, chs))
+    hlf = crop_size // 2 # crop half size
+    pad_width = ((0, 0), (hlf, hlf), (hlf, hlf))
     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
-
+    
     # Extract coordinates
-    ys = ctd["y"][stk_level].astype(int)
-    xs = ctd["x"][stk_level].astype(int)
+    ys, xs = prp["y"], prp["x"]
     
     # Select random coordinates
     if crop_fraction is not None:
@@ -319,7 +326,7 @@ def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
             )
         ys = ys[crop_idx]
         xs = xs[crop_idx]
-    
+        
     # Extract crops
     crops = []
     for (y, x) in zip(ys, xs):
@@ -330,6 +337,38 @@ def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
         crops.append(stk[..., y0:y1, x0:x1])
         
     return np.stack(crops)
+    
+# def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
+    
+#     # Pad (acc. to crop half size)
+#     chs = crop_size // 2 # crop half size
+#     pad_width = ((0, 0), (chs, chs), (chs, chs))
+#     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+
+#     # Extract coordinates
+#     ys = ctd["y"][stk_level].astype(int)
+#     xs = ctd["x"][stk_level].astype(int)
+    
+#     # Select random coordinates
+#     if crop_fraction is not None:
+#         crop_idx = np.random.choice(
+#             np.arange(0, len(ys)), 
+#             size=int(len(ys) * crop_fraction), 
+#             replace=False,
+#             )
+#         ys = ys[crop_idx]
+#         xs = xs[crop_idx]
+    
+#     # Extract crops
+#     crops = []
+#     for (y, x) in zip(ys, xs):
+#         y0 = y; y1 = y + crop_size
+#         x0 = x; x1 = x + crop_size
+#         if y1 - y0 != crop_size: print(y0, y1)
+#         if x1 - x0 != crop_size: print(x0, x1)
+#         crops.append(stk[..., y0:y1, x0:x1])
+        
+#     return np.stack(crops)
 
 def get_crops_processed(crp):
     crp_prc = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
