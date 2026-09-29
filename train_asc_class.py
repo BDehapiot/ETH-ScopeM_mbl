@@ -29,7 +29,7 @@ parameters = {
     
     # Paths -------------------------------------------------------------------
     
-    "train_path" : Path.cwd() / "data" / "train_spk_class", 
+    "train_path" : Path.cwd() / "data" / "train_asc_class", 
         
     # Crops -------------------------------------------------------------------
     

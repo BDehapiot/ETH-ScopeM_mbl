@@ -62,7 +62,6 @@ class AnnotateASC:
         
         # Load data
         self.asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)
-        print(self.asc_nrm.shape)
         with open(asc_prp_path, "rb") as file:
             self.asc_prp = pickle.load(file)
         self.asc_msk = get_mask_from_props(
@@ -82,7 +81,7 @@ class AnnotateASC:
                 self.asc_cls = pickle.load(file)
                 
             # Update asc_slc
-            for coords, clss in zip(*self.asc_cls.values()):
+            for coords, clss in zip(self.asc_cls["coords"], self.asc_cls["class"]):
                 self.asc_slc[tuple(coords.T)] = clss
                 
     def update_mask(self):
@@ -97,7 +96,7 @@ class AnnotateASC:
         props = regionprops_table(
             label(asc_slc > 0), 
             intensity_image=asc_slc, 
-            properties=("label", "coords", "intensity_max")
+            properties=("label", "centroid", "coords", "intensity_max")
             )
         self.asc_cls["y"     ] = list(props["centroid-0"].astype("uint16")),  
         self.asc_cls["x"     ] = list(props["centroid-1"].astype("uint16")),  
