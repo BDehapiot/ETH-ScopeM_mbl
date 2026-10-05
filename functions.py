@@ -307,16 +307,21 @@ def get_obj_properties(nrm, msk):
 
 #%% function(s) : get_obj_crops() ---------------------------------------------
 
-def get_obj_crops(stk, prp, crop_size=32, crop_fraction=None):
+def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
+
+    # Check inputs
+    ndim = stk.ndim
+    if isinstance(ys, list): ys = np.array(ys)
+    if isinstance(xs, list): xs = np.array(xs)
     
     # Pad (acc. to crop half size)
     hlf = crop_size // 2 # crop half size
-    pad_width = ((0, 0), (hlf, hlf), (hlf, hlf))
+    if ndim == 3:
+        pad_width = ((0, 0), (hlf, hlf), (hlf, hlf))
+    elif ndim == 2:
+        pad_width = ((hlf, hlf), (hlf, hlf))
     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
-    
-    # Extract coordinates
-    ys, xs = prp["y"], prp["x"]
-    
+        
     # Select random coordinates
     if crop_fraction is not None:
         crop_idx = np.random.choice(
@@ -334,9 +339,16 @@ def get_obj_crops(stk, prp, crop_size=32, crop_fraction=None):
         x0 = x; x1 = x + crop_size
         if y1 - y0 != crop_size: print(y0, y1)
         if x1 - x0 != crop_size: print(x0, x1)
-        crops.append(stk[..., y0:y1, x0:x1])
-        
-    return np.stack(crops)
+        if ndim == 3:
+            crops.append(stk[..., y0:y1, x0:x1])
+        elif ndim == 2:
+            crops.append(stk[y0:y1, x0:x1])
+            
+    # Format output
+    if ndim == 3:
+        return np.transpose(np.stack(crops), (0, 2, 3, 1))
+    else:
+        return np.stack(crops)
     
 # def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
     

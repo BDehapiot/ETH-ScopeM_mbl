@@ -46,17 +46,19 @@ class Display:
         
         # Maps
         
-        self.class_map = {
-            "cls_oth" : {"tag" : 0, "color" : self.colors[0], "class" : self.classes[0]},
-            "cls_epi" : {"tag" : 1, "color" : self.colors[1], "class" : self.classes[1]},
-            "cls_neu" : {"tag" : 2, "color" : self.colors[2], "class" : self.classes[2]},
-            "cls_mac" : {"tag" : 3, "color" : self.colors[3], "class" : self.classes[3]},
-            "cls_bcl" : {"tag" : 4, "color" : self.colors[4], "class" : self.classes[4]},
-            "cls_tcl" : {"tag" : 5, "color" : self.colors[5], "class" : self.classes[5]},
+        clrs = self.ncl_colors
+        clss = self.ncl_classes
+        self.ncl_class_map = {
+            "cls_oth" : {"tag" : 0, "color" : clrs[0], "class" : clss[0]},
+            "cls_epi" : {"tag" : 1, "color" : clrs[1], "class" : clss[1]},
+            "cls_neu" : {"tag" : 2, "color" : clrs[2], "class" : clss[2]},
+            "cls_mac" : {"tag" : 3, "color" : clrs[3], "class" : clss[3]},
+            "cls_bcl" : {"tag" : 4, "color" : clrs[4], "class" : clss[4]},
+            "cls_tcl" : {"tag" : 5, "color" : clrs[5], "class" : clss[5]},
             }
         
         self.color_map = {
-            v["tag"]: v["color"] for v in self.class_map.values()}
+            v["tag"]: v["color"] for v in self.ncl_class_map.values()}
                 
 #%% Class(Display) : function(s) ----------------------------------------------
 
@@ -171,9 +173,9 @@ class Display:
         self.cls_group.setExclusive(False)
         self.cls_group_box = QGroupBox("Select class")
         self.cls_group_layout = QHBoxLayout()
-        for c in self.classes:
+        for c in self.ncl_classes:
             setattr(self, f"chk_{c}", QCheckBox(f"{c}")) 
-            if c == self.classes[self.cls_idx]:
+            if c == self.ncl_classes[self.cls_idx]:
                 getattr(self, f"chk_{c}").setChecked(True)
             self.cls_group.addButton(getattr(self, f"chk_{c}"))
             self.cls_group_layout.addWidget(getattr(self, f"chk_{c}"))
@@ -235,9 +237,9 @@ class Display:
             blending="translucent", size=6, border_width=0.0,
             features={"class_label": self.ncl_prd},
             face_color={"colors": "class_label", "color_mode": "cycle"},
-            face_color_cycle=self.color_map,
+            face_color_cycle=self.ncl_color_map,
             border_color={"colors": "class_label", "color_mode": "cycle"},
-            border_color_cycle=self.color_map,
+            border_color_cycle=self.ncl_color_map,
             opacity=0.6, 
             )
         

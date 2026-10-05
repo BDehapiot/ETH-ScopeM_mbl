@@ -58,7 +58,7 @@ class AnnotateASC:
         vws_path = self.vws_paths[self.vws_idx]
         stk_nrm_path = vws_path / "stack_norm.tif"
         asc_prp_path = vws_path / "asc_properties.pkl"
-        self.asc_cls_path = vws_path / "asc_classes.pkl"
+        self.asc_ann_path = vws_path / "asc_classes.pkl"
         
         # Load data
         self.asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)
@@ -69,22 +69,22 @@ class AnnotateASC:
         self.asc_slc = np.zeros_like(self.asc_msk, dtype="uint8")
         
         # Load asc classes (if exists)
-        if not self.asc_cls_path.exists():
-            self.asc_cls = {
+        if not self.asc_ann_path.exists():
+            self.asc_ann = {
                 "y"      : [],
                 "x"      : [],
                 "coords" : [], 
                 "class"  : [],
                 }
         else:
-            with open(self.asc_cls_path, "rb") as file:
-                self.asc_cls = pickle.load(file)
+            with open(self.asc_ann_path, "rb") as file:
+                self.asc_ann = pickle.load(file)
                 
             # Update asc_slc
-            for coords, clss in zip(self.asc_cls["coords"], self.asc_cls["class"]):
+            for coords, clss in zip(self.asc_ann["coords"], self.asc_ann["class"]):
                 self.asc_slc[tuple(coords.T)] = clss
                 
-    def update_mask(self):
+    def update_select(self):
         
         # Update asc_slc
         asc_msk = self.vwr.layers["asc_msk"].data
@@ -92,20 +92,20 @@ class AnnotateASC:
         asc_slc[asc_msk == 0] = 0 
         self.vwr.layers["asc_slc"].data = asc_slc
         
-        # Update asc_cls
+        # Update asc_ann
         props = regionprops_table(
             label(asc_slc > 0), 
             intensity_image=asc_slc, 
             properties=("label", "centroid", "coords", "intensity_max")
             )
-        self.asc_cls["y"     ] = list(props["centroid-0"].astype("uint16")),  
-        self.asc_cls["x"     ] = list(props["centroid-1"].astype("uint16")),  
-        self.asc_cls["coords"] = list(props["coords"])
-        self.asc_cls["class" ] = [int(c) for c in props["intensity_max"]]
+        self.asc_ann["y"     ] = list(props["centroid-0"].astype("uint16"))
+        self.asc_ann["x"     ] = list(props["centroid-1"].astype("uint16"))
+        self.asc_ann["coords"] = list(props["coords"])
+        self.asc_ann["class" ] = [int(c) for c in props["intensity_max"]]
         
-        # Save asc_cls
-        with open(self.asc_cls_path, "wb") as file:
-            pickle.dump(self.asc_cls, file)
+        # Save asc_ann
+        with open(self.asc_ann_path, "wb") as file:
+            pickle.dump(self.asc_ann, file)
 
         self.get_info()
         
@@ -165,8 +165,8 @@ class AnnotateASC:
         # Create "classify" menu
         self.cls_group_box = QGroupBox("Classify")
         self.cls_group_layout = QVBoxLayout()
-        self.cls_add = QRadioButton("valid")
-        self.cls_rmv = QRadioButton("invalid")
+        self.cls_add = QRadioButton("Speckle")
+        self.cls_rmv = QRadioButton("Normal")
         self.cls_add.setChecked(True)
         self.cls_group_layout.addWidget(self.cls_add)
         self.cls_group_layout.addWidget(self.cls_rmv)
@@ -220,7 +220,7 @@ class AnnotateASC:
             
         @Labels.bind_key("Enter", overwrite=True)
         def _save_mask_key(viewer):
-            self.update_mask() 
+            self.update_select() 
             
         @self.vwr.mouse_drag_callbacks.append
         def mouse_actions(vwr, event):
@@ -259,19 +259,19 @@ class AnnotateASC:
 
     def get_info(self):
 
-        n_add = self.asc_cls["class"].count(1)
-        n_rmv = self.asc_cls["class"].count(2)
+        n_add = self.asc_ann["class"].count(1)
+        n_rmv = self.asc_ann["class"].count(2)
 
         self.info.setText(
             f"{self.vws_paths[self.vws_idx].name}\n"
-            f"n valid   = {n_add}\n"
-            f"n invalid = {n_rmv}"
+            f"n Speckle = {n_add}\n"
+            f"n Normal  = {n_rmv}"
             )
 
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)
-    annASC = AnnotateASC(main)
-    asc_prp = annASC.asc_prp
-    asc_cls = annASC.asc_cls
+    ann = AnnotateASC(main)
+    asc_prp = ann.asc_prp
+    asc_ann = ann.asc_ann

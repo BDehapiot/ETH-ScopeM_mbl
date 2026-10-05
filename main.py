@@ -33,19 +33,21 @@ from scipy.stats import entropy
 main_parameters = {
 
     # Procedure
-    "force_extract"         : 0,
+    "force_extract"         : 1,
     "force_predict_nuclei"  : 1,
     "force_predict_asc"     : 1,
-    "force_predict_classes" : 0,
+    "force_classify_nuclei" : 1,
+    "force_classify_asc"    : 1,
     "force_measure"         : 0,
     "force_analyse"         : 0,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
-    "model_preview_name"    : "model-sm_preview_256_binary_227-1024",
-    "model_nuclei_name"     : "model-sm_nuclei_256_edt_192-1024",
+    "model_pvw_name"        : "model-sm_preview_256_binary_227-1024",
+    "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
     "model_asc_name"        : "model-sm_asc_256_binary_307-1024",
-    "model_classes_name"    : "model-cls_classes_12_2_6_5045-8190b",
+    "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
+    "model_asc_class_name"  : "model-cls_asc_12_2_2_958-8192b",
     
     # extract()
     "pvw_level"             : 4,
@@ -80,11 +82,14 @@ main_parameters = {
     "channels" : [
         "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF",
         ],
-    "classes"  : [
+    "ncl_classes" : [
         "Other", "Epithelium", "Neutrophil", "Macrophage", "Bcell", "Tcell",  
         ],
+    "asc_classes" : [
+        "Speckle", "Normal"
+        ],
     
-    "colors" : [
+    "ncl_colors" : [
         [0.0, 0.0, 1.0], # Other
         [0.0, 0.8, 0.2], # Epithelium
         [1.0, 0.0, 0.0], # Neutrophil
@@ -108,7 +113,8 @@ class Main:
         self.extract()
         self.predict_nuclei()
         self.predict_asc()
-        self.predict_classes()
+        self.classify_nuclei()
+        self.classify_asc()
         self.measure()
         self.analyse()
         
@@ -168,7 +174,7 @@ class Main:
                     if "model_preview" not in locals():
                         model_preview = Model(
                             parameters=None, 
-                            model_path=Path.cwd() / self.model_preview_name
+                            model_path=Path.cwd() / self.model_pvw_name
                             )
                     
                     vws_path.mkdir(parents=True, exist_ok=True) 
@@ -261,7 +267,7 @@ class Main:
                 print("-" * len(log_str))
                 
                 # Model
-                model_nuclei_path = Path.cwd() / self.model_nuclei_name
+                model_nuclei_path = Path.cwd() / self.model_ncl_name
                 if "model_nuclei" not in locals():
                     model_nuclei = Model(
                         parameters=None, model_path=model_nuclei_path)
@@ -423,7 +429,7 @@ class Main:
 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - get centroids")
-                
+
                 # Save --------------------------------------------------------
                 
                 t0 = time.time()
@@ -447,83 +453,90 @@ class Main:
                 t1f = time.time()
                 print(f"> {t1f - t0i:.3f}s")
                 
-#%% Class(Main) : predict_classes() -------------------------------------------
-            
-    def predict_classes(self):
+#%% Class(Main) : classify_nuclei() -------------------------------------------
+
+    def classify_nuclei(self):
+        pass
+                
+#%% Class(Main) : classify_asc() ----------------------------------------------
+
+    def classify_asc(self):
         
         for p, vws_path in enumerate(self.vws_paths):
-            
+        
             # Paths
-            ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
             stk_nrm_path = vws_path / "stack_norm.tif"
-            ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-            ncl_ent_path = vws_path / "nuclei_classes_entropy.pkl"
+            asc_prp_path = vws_path / "asc_properties.pkl"
+            asc_cls_path = vws_path / "asc_classes.pkl"
             
-            if ((self.force_predict_classes > 0 and not ncl_ent_path.exists()) 
-                or self.force_predict_classes == 2):    
-            
+            if ((self.force_classify_asc > 0 and not asc_cls_path.exists()) 
+                or self.force_classify_asc == 2):
+                
                 # Log
                 t0i = time.time()
-                log_str = f"Main() : predict_classes() : {vws_path.name}"
+                log_str = f"Main() : classify_asc() : {vws_path.name}"
                 print("-" * len(log_str))
                 print(log_str)
-                print("-" * len(log_str))    
+                print("-" * len(log_str))
                 
                 # Model
-                if "model_classes" not in locals():
-                    model_classes = Model(
-                        parameters=None, 
-                        model_path=Path.cwd() / self.model_classes_name
-                        )
-                
+                model_asc_class_path = Path.cwd() / self.model_asc_class_name
+                if "model_asc_class" not in locals():
+                    model_asc_class = Model(
+                        parameters=None, model_path=model_asc_class_path)
+                    
                 # Load --------------------------------------------------------
                 
                 t0 = time.time()
                 
-                with open(ncl_ctd_path, "rb") as file:
-                    ncl_ctd = pickle.load(file)
-                stk_nrm = io.imread(stk_nrm_path)
+                with open(asc_prp_path, "rb") as file:
+                    asc_prp = pickle.load(file)
+                asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)  
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
                 
                 # Get crops ---------------------------------------------------
-                    
+                
                 t0 = time.time()
-
-                crop_size = int(self.model_classes_name.split("_")[2])
-                crp_nrm = get_crops(
-                    stk_nrm, ncl_ctd, 
-                    crop_size=crop_size, 
-                    stk_level=self.stk_level
+                
+                asc_crp = get_obj_crops(
+                    asc_nrm, asc_prp["y"], asc_prp["x"],
+                    crop_size=int(self.model_asc_class_name.split("_")[2]),
                     )
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - get crops")
                 
-                # Predict -----------------------------------------------------
-
-                t0 = time.time()
-
-                crp_prc = get_crops_processed(crp_nrm)
-                ncl_prd = model_classes.predict(crp_prc)
-                ncl_ent = entropy(ncl_prd, axis=1, base=len(self.classes))
-                ncl_prd = np.argmax(ncl_prd, axis=1)
-    
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - predict")    
-    
-                # Save --------------------------------------------------------
-    
+                # Classify ----------------------------------------------------
+                
                 t0 = time.time()
                 
-                with open(ncl_prd_path, "wb") as file:
-                    pickle.dump(ncl_prd, file)
-                with open(ncl_ent_path, "wb") as file:
-                    pickle.dump(ncl_ent, file)
+                asc_cls = model_asc_class.predict(asc_crp)
+                asc_cls = {
+                    "y"       : asc_prp["y"], 
+                    "x"       : asc_prp["x"], 
+                    "class"   : np.argmax(asc_cls, axis=1), 
+                    "entropy" : entropy(
+                        asc_cls, axis=1, base=len(self.asc_classes)), 
+                    }
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - classify") 
+                
+                # ///
+                self.asc_cls = asc_cls
+                # ///
+                
+                # Save --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                with open(asc_cls_path, "wb") as file:
+                    pickle.dump(asc_cls, file)
                     
                 # Clear
-                del stk_nrm, ncl_ctd, crp_nrm, crp_prc, ncl_prd, ncl_ent
+                del asc_nrm, asc_prp, asc_crp, asc_cls
                 tf.keras.backend.clear_session()
                 gc.collect()
                 
@@ -832,35 +845,36 @@ class Main:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)    
+    main = Main(parameters=main_parameters)  
+    asc_cls = main.asc_cls
     
 #%%
 
-    def get_mask_from_props(prp, shape=(2048, 2048)):
-        msk = np.zeros(shape, dtype=bool)
-        for coords in prp["coords"]:
-            msk[tuple(coords.T)] = True
-        return msk
+    # def get_mask_from_props(prp, shape=(2048, 2048)):
+    #     msk = np.zeros(shape, dtype=bool)
+    #     for coords in prp["coords"]:
+    #         msk[tuple(coords.T)] = True
+    #     return msk
 
-    # -------------------------------------------------------------------------    
+    # # -------------------------------------------------------------------------    
 
-    # Paths
-    vws_path = main.vws_paths[0]
-    stk_nrm_path = vws_path / "stack_norm.tif"
-    ncl_prp_path = vws_path / "nuclei_properties.pkl"
+    # # Paths
+    # vws_path = main.vws_paths[0]
+    # stk_nrm_path = vws_path / "stack_norm.tif"
+    # ncl_prp_path = vws_path / "nuclei_properties.pkl"
     
-    # Load
-    stk_nrm = io.imread(stk_nrm_path)
-    with open(ncl_prp_path, "rb") as file:
-        ncl_prp = pickle.load(file)
+    # # Load
+    # stk_nrm = io.imread(stk_nrm_path)
+    # with open(ncl_prp_path, "rb") as file:
+    #     ncl_prp = pickle.load(file)
         
-    # Get mask
-    ncl_msk = get_mask_from_props(ncl_prp, shape=stk_nrm[0, ...].shape)
+    # # Get mask
+    # ncl_msk = get_mask_from_props(ncl_prp, shape=stk_nrm[0, ...].shape)
     
-    # Display
-    import napari
-    vwr = napari.Viewer()
-    vwr.add_image(ncl_msk, colormap="gray")
+    # # Display
+    # import napari
+    # vwr = napari.Viewer()
+    # vwr.add_image(ncl_msk, colormap="gray")
        
 #%% 
 
