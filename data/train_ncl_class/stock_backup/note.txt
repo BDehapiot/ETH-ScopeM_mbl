@@ -1,0 +1,7 @@
+The crp_nrm.npz and ncl_cls.pkl were generated unsing a previous version of the 
+code. This format is no longer valid, but the current used model for nuclei class 
+prediction was trainned on them. 
+
+- crp_nrm.npz = cropped image of nuclei in [img, channel, y, x] format. Requires
+load_compressed_stack() function to be read.
+- ncl_cls.pkl = annotated nuclei class saved via pickle as 1D ndarray

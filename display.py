@@ -67,20 +67,21 @@ class Display:
     def load_data(self):
         
         # Paths
-        mtd_path = self.mtd_paths[self.vws_idx]
         vws_path = self.vws_paths[self.vws_idx]
-        pvw_sts_path = vws_path / "preview_stats.pkl"
-        ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-        ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-        ncl_plt_path = vws_path / "nuclei_plot.png"
         stk_nrm_path = vws_path / "stack_norm.tif"
-        asc_dsp_path = vws_path / "asc_display.tif"
+        ncl_prp_path = vws_path / "nuclei_properties.pkl"
+        ncl_cls_path = vws_path / "nuclei_classes.pkl"
+        ncl_plt_path = vws_path / "nuclei_plot.pkl"
+        asc_prp_path = vws_path / "asc_properties.pkl"
+        asc_cls_path = vws_path / "asc_classes.pkl"
+        asc_plt_path = vws_path / "asc_plot.pkl"
         
         # Load
-        with open(mtd_path, "rb") as file:
-            self.mtd = pickle.load(file)
-        with open(pvw_sts_path, "rb") as file:
-            self.pvw_sts = pickle.load(file)
+        with open(ncl_prp_path, "rb") as file:
+            ncl_prp = 
+        
+        
+        
         with open(ncl_ctd_path, "rb") as file:
             self.ncl_ctd = pickle.load(file)
             self.ncl_ctd = np.column_stack((
@@ -93,7 +94,6 @@ class Display:
         self.ncl_plt = self.ncl_plt.scaledToWidth(
             int(self.dock_width / 1.75), Qt.SmoothTransformation)
         self.stk_nrm = io.imread(stk_nrm_path)
-        self.asc_dsp = io.imread(asc_dsp_path)
 
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 

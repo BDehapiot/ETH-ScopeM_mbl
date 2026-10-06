@@ -456,7 +456,87 @@ class Main:
 #%% Class(Main) : classify_nuclei() -------------------------------------------
 
     def classify_nuclei(self):
-        pass
+        
+        for p, vws_path in enumerate(self.vws_paths):
+            
+            # Paths
+            stk_nrm_path = vws_path / "stack_norm.tif"
+            ncl_prp_path = vws_path / "nuclei_properties.pkl"
+            ncl_cls_path = vws_path / "nuclei_classes.pkl"
+            
+            if ((self.force_classify_nuclei > 0 and not ncl_cls_path.exists()) 
+                or self.force_classify_nuclei == 2):
+                
+                # Log
+                t0i = time.time()
+                log_str = f"Main() : classify_nuclei() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))
+                
+                # Model
+                model_ncl_class_path = Path.cwd() / self.model_ncl_class_name
+                if "model_ncl_class" not in locals():
+                    model_ncl_class = Model(
+                        parameters=None, model_path=model_ncl_class_path)
+
+                # Load --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                with open(ncl_prp_path, "rb") as file:
+                    ncl_prp = pickle.load(file)
+                stk_nrm = imread_channel(
+                    stk_nrm_path, channel_idx=[1, 2, 3, 5, 6])  
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - load")
+                
+                # Get crops ---------------------------------------------------
+                
+                t0 = time.time()
+                
+                ncl_crp = get_obj_crops(
+                    stk_nrm, ncl_prp["y"], ncl_prp["x"],
+                    crop_size=int(self.model_ncl_class_name.split("_")[2]),
+                    )
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - get crops")
+                
+                # Classify ----------------------------------------------------
+                
+                t0 = time.time()
+                
+                ncl_cls = model_ncl_class.predict(ncl_crp)
+                ncl_cls = {
+                    "y"       : ncl_prp["y"], 
+                    "x"       : ncl_prp["x"], 
+                    "class"   : np.argmax(ncl_cls, axis=1), 
+                    "entropy" : entropy(
+                        ncl_cls, axis=1, base=len(self.ncl_classes)), 
+                    }
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - classify") 
+                
+                # Save --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                with open(ncl_cls_path, "wb") as file:
+                    pickle.dump(ncl_cls, file)
+                    
+                # Clear
+                del stk_nrm, ncl_prp, ncl_crp, ncl_cls
+                tf.keras.backend.clear_session()
+                gc.collect()
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - save")
+                
+                t1f = time.time()
+                print(f"> {t1f - t0i:.3f}s")
                 
 #%% Class(Main) : classify_asc() ----------------------------------------------
 
@@ -523,10 +603,6 @@ class Main:
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - classify") 
-                
-                # ///
-                self.asc_cls = asc_cls
-                # ///
                 
                 # Save --------------------------------------------------------
                 
@@ -846,305 +922,3 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)  
-    asc_cls = main.asc_cls
-    
-#%%
-
-    # def get_mask_from_props(prp, shape=(2048, 2048)):
-    #     msk = np.zeros(shape, dtype=bool)
-    #     for coords in prp["coords"]:
-    #         msk[tuple(coords.T)] = True
-    #     return msk
-
-    # # -------------------------------------------------------------------------    
-
-    # # Paths
-    # vws_path = main.vws_paths[0]
-    # stk_nrm_path = vws_path / "stack_norm.tif"
-    # ncl_prp_path = vws_path / "nuclei_properties.pkl"
-    
-    # # Load
-    # stk_nrm = io.imread(stk_nrm_path)
-    # with open(ncl_prp_path, "rb") as file:
-    #     ncl_prp = pickle.load(file)
-        
-    # # Get mask
-    # ncl_msk = get_mask_from_props(ncl_prp, shape=stk_nrm[0, ...].shape)
-    
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(ncl_msk, colormap="gray")
-       
-#%% 
-
-    # stk_nrm_path = main.stk_nrm_path
-    # ncl_msk = main.ncl_msk
-
-    # import tifffile
-    # from skimage.measure import label, regionprops_table
-
-    # def imread_channel(path, channel_idx=0, normalize=True):
-    #     img_memmap = tifffile.memmap(path)
-    #     img = img_memmap[channel_idx, :, :]
-    #     if normalize:
-    #         return img.astype("float32") / 255
-    #     else:
-    #         return img
-    
-    # def get_obj_properties(nrm, msk):
-
-    #     props = regionprops_table(
-    #         label(msk), intensity_image=nrm, 
-    #         properties=(
-    #             "area", "coords", "centroid", "eccentricity",
-    #             "intensity_max", "intensity_min",
-    #             "intensity_mean", "intensity_std",
-    #             ),
-    #         )
-
-    #     return {
-    #         "y"      : list(props["centroid-0"].astype("uint16")),  
-    #         "x"      : list(props["centroid-1"].astype("uint16")),  
-    #         "area"   : list(props["area"].astype("uint16")), 
-    #         "coords" : [coord.astype("uint16") for coord in props["coords"]], 
-    #         "eccentricity"   : list(props["eccentricity"].astype("float32")), 
-    #         "intensity_max"  : list(props["intensity_max"].astype("float32")),  
-    #         "intensity_min"  : list(props["intensity_min"].astype("float32")), 
-    #         "intensity_mean" : list(props["intensity_mean"].astype("float32")), 
-    #         "intensity_std"  : list(props["intensity_std"].astype("float32")), 
-    #         }       
-            
-    # ncl_nrm = imread_channel(stk_nrm_path, channel_idx=0)
-    # ncl_prp = get_obj_properties(ncl_nrm, ncl_msk)
-    
-    # ncl_prp_path = Path("ncl_prp.pkl")
-    # with open(ncl_prp_path, "wb") as file:
-    #     pickle.dump(ncl_prp, file)
-    
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     rescale(ncl_nrm, rf), colormap="gray",
-    #     gamma=0.5, opacity=0.75,
-    #     )
-    # vwr.add_image(
-    #     ncl_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.5,
-    #     )
-    
-#%%
-    
-    # # bdtools
-    # from bdtools.conn import lbl_conn
-
-    # # skimage
-    # from skimage.transform import rescale
-    # from skimage.segmentation import watershed
-    # from skimage.morphology import remove_small_objects
-    # from skimage.measure import label, regionprops_table
-
-    # def get_obj_mask(
-    #         prd, thresh_0=0.25, thresh_1=0.50, min_size=8, 
-    #         prd_level=0, msk_level=1,
-    #         ):
-        
-    #     # Initialize
-    #     rf = 1 / (2 ** (msk_level - prd_level))
-    #     min_size = min_size // ((2 ** msk_level) ** 2) 
-        
-    #     # Rescale prediction (if required)
-    #     if rf != 1: 
-    #         prd = rescale(prd, rf)
-            
-    #     # Get mask
-    #     if thresh_1 is not None:
-    #         msk_0 = prd > thresh_0
-    #         msk_1 = prd > thresh_1
-    #         msk = watershed(-prd, label(msk_1), mask=msk_0)
-    #         msk[lbl_conn(msk, conn=2) == 2] = 0
-    #         msk = msk > 0
-    #     else:
-    #         msk = prd > thresh_0
-        
-    #     # Remove small objects
-    #     if min_size > 0:
-    #         msk = remove_small_objects(msk, min_size=min_size)
-        
-    #     return msk
-    
-    # def get_obj_centroids(msk, n_levels=5, msk_level=0):
-    #     props = regionprops_table(label(msk), properties=("label", "centroid"))
-    #     y, x = props["centroid-0"], props["centroid-1"]
-    #     ctd = {"y" : [], "x" : []}
-    #     for level in range(n_levels):
-    #         factor = 2 ** (msk_level - level)
-    #         ctd["y"].append(y * factor)
-    #         ctd["x"].append(x * factor)
-    #     return ctd
-
-    # ncl_msk = get_obj_mask(
-    #     ncl_prd, 
-    #     thresh_0=main_parameters["ncl_thresh_0"], 
-    #     thresh_1=main_parameters["ncl_thresh_1"], 
-    #     min_size=main_parameters["ncl_min_size"],
-    #     prd_level=main_parameters["ncl_level"],
-    #     )
-    
-    # ncl_ctd = get_obj_centroids(
-    #     ncl_msk, 
-    #     n_levels=len(mtd["level"]), 
-    #     msk_level=main_parameters["ncl_level"],
-    #     )
-        
-    # # Display
-    # import napari
-    # rf = 1 / (2 ** (main_parameters["stk_level"] - main_parameters["ncl_level"]))
-    
-    # vwr = napari.Viewer()
-    # vwr.add_image(
-    #     rescale(ncl_nrm, rf), colormap="gray",
-    #     gamma=0.5, opacity=0.75,
-    #     )
-    # vwr.add_image(
-    #     ncl_msk, colormap="bop orange",
-    #     blending="additive", opacity=0.5,
-    #     )
-   
-    
-#%%
-    
-    # data_path = main_parameters["data_path"]
-    # vws_path = data_path / "251126_D7_S2_Scan1_unmixed_00"
-    
-    # # -------------------------------------------------------------------------
-    
-    # # Paths
-    # ncl_ctd_path = vws_path / "nuclei_centroids.pkl"
-    # pvw_msk_path = vws_path / "preview_mask.tif"  
-    # stk_nrm_path = vws_path / "stack_norm.tif"  
-    # asc_msk_path = vws_path / "asc_mask.tif"
-    # ncl_sts_path = vws_path / "nuclei_stats.pkl"
-    # asc_sts_path = vws_path / "asc_stats.pkl"
-    # asc_dst_path = vws_path / "asc_distances.pkl"
-    
-    # ncl_prd_path = vws_path / "nuclei_classes_predict.pkl"
-    
-    # # -------------------------------------------------------------------------
-    
-    # with open(ncl_ctd_path, "rb") as file:
-    #     ncl_ctd = pickle.load(file)
-    # with open(ncl_prd_path, "rb") as file:
-    #     ncl_prd = pickle.load(file)
-    # pvw_msk = io.imread(pvw_msk_path)
-    # stk_nrm = io.imread(stk_nrm_path)
-    # asc_msk = io.imread(asc_msk_path)
-        
-    # # -------------------------------------------------------------------------
-    
-    # from skimage.measure import label
-    # from scipy.ndimage import distance_transform_edt
-    
-    # def get_asc_stats(
-    #         pvw_msk, ncl_ctd, asc_msk,
-    #         pvw_level=4, stk_level=1
-    #         ):
-        
-    #     # Init.
-    #     asc_sts = {}
-    #     pvw_factor = (2 ** pvw_level) ** 2
-    #     asc_factor = (2 ** stk_level) ** 2
-        
-    #     # Areas
-    #     all_area = np.sum(pvw_msk > 0) * pvw_factor
-    #     asc_area = np.sum(asc_msk > 0) * asc_factor
-    #     asc_area_nrm = asc_area / all_area
-        
-    #     # Counts
-    #     ncl_num = len(ncl_ctd["y"][0])
-    #     asc_num = np.max(label(asc_msk > 0))
-    #     asc_spk_num = np.max(label(asc_msk > 200))
-    #     asc_num_ratio = asc_num / ncl_num
-    #     asc_spk_num_ratio = asc_spk_num / ncl_num
-                
-    #     # Append
-    #     asc_sts["all_area"         ] = all_area
-    #     asc_sts["asc_area"         ] = asc_area
-    #     asc_sts["asc_area_ratio"   ] = asc_area_nrm
-    #     asc_sts["ncl_num"          ] = ncl_num
-    #     asc_sts["asc_num"          ] = asc_num
-    #     asc_sts["asc_spk_num"      ] = asc_spk_num
-    #     asc_sts["asc_num_ratio"    ] = asc_num_ratio
-    #     asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
-        
-    #     return asc_sts
-    
-    # def format_asc_stats(asc_sts, vws_path):
-    #     asc_sts_df = pd.DataFrame([asc_sts])
-    #     asc_sts_df.insert(0, "view", vws_path.name)
-    #     return asc_sts_df
-    
-    # def get_asc_distances(asc_msk, ncl_ctd, classes, stk_level=1):
-                
-    #     # Get edt
-    #     asc_edt = distance_transform_edt(~asc_msk)
-        
-    #     # Get asc distances
-    #     coords = (
-    #         ncl_ctd["y"][stk_level].astype(int), 
-    #         ncl_ctd["x"][stk_level].astype(int),
-    #         )
-    #     asc_dst = asc_edt[coords]
-        
-    #     # Scale acc. to stk_level
-    #     asc_dst *= 2 ** stk_level
-        
-    #     return asc_dst
-    
-    # def format_asc_distances(
-    #     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
-        
-    #     def get_counts(ncl_prd, normalized=False):
-    #         _, counts = np.unique(ncl_prd, return_counts=True)
-    #         if normalized:
-    #             counts = counts.astype("float32") / np.sum(counts)
-    #         return counts
-        
-    #     # Get bins
-    #     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
-        
-    #     # Count nuclei class
-    #     counts_raw = []
-    #     counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
-    #     for d, dst in enumerate(bins):
-    #         dst0 = 0 if d == 0 else bins[d - 1]
-    #         ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
-    #         counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
-            
-    #     # Normalizations (enrichment)
-    #     counts_nrm = []
-    #     for d, dst in enumerate(bins):
-    #         counts_nrm.append(counts_raw[d] / counts_all_raw)
-        
-    #     # # Get dataframe
-    #     asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
-    #     asc_dst_df.insert(0, "distances", bins)
-    #     asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
-    #     asc_dst_dfn.insert(0, "distances", bins)
-        
-    #     return asc_dst_df, asc_dst_dfn
-    
-    # # -------------------------------------------------------------------------
-    
-    # asc_sts = get_asc_stats(
-    #     pvw_msk, ncl_ctd, asc_msk, 
-    #     pvw_level=4, stk_level=1
-    #     )
-    
-    # asc_sts_df = format_asc_stats(asc_sts, vws_path)
-    
-    # classes = main_parameters["classes"]
-    
-    # asc_dst = get_asc_distances(asc_msk > 200, ncl_ctd, classes, stk_level=1)
-    
-    # asc_dst_df, asc_dst_dfn = format_asc_distances(
-    #     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1)

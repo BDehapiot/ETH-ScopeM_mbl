@@ -5,7 +5,7 @@ import numpy as np
 from main import Main, main_parameters
 
 # functions
-from functions import imread_channel, get_mask_from_props
+from functions import imread_channel, get_mask_from_coords
 
 # skimage
 from skimage.measure import label, regionprops_table
@@ -58,14 +58,14 @@ class AnnotateASC:
         vws_path = self.vws_paths[self.vws_idx]
         stk_nrm_path = vws_path / "stack_norm.tif"
         asc_prp_path = vws_path / "asc_properties.pkl"
-        self.asc_ann_path = vws_path / "asc_classes.pkl"
+        self.asc_ann_path = vws_path / "asc_annotations.pkl"
         
         # Load data
         self.asc_nrm = imread_channel(stk_nrm_path, channel_idx=4)
         with open(asc_prp_path, "rb") as file:
             self.asc_prp = pickle.load(file)
-        self.asc_msk = get_mask_from_props(
-            self.asc_prp, shape=self.asc_nrm.shape)
+        self.asc_msk = get_mask_from_coords(
+            self.asc_prp["coords"], labels=None, shape=self.asc_nrm.shape)
         self.asc_slc = np.zeros_like(self.asc_msk, dtype="uint8")
         
         # Load asc classes (if exists)
@@ -114,29 +114,26 @@ class AnnotateASC:
         self.vwr.layers["asc_nrm"].data = self.asc_nrm
         self.vwr.layers["asc_msk"].data = self.asc_msk
         self.vwr.layers["asc_slc"].data = self.asc_slc
+        self.get_info()
 
-    # Buttons -----------------------------------------------------------------
+    # Buttons & shortcuts -----------------------------------------------------
     
     def prev_view(self):
         if self.vws_idx > 0:
             self.vws_idx -= 1
         self.update_view()
-        self.get_info()
         
     def next_view(self):
         if self.vws_idx < (len(self.vws_paths) - 1):
             self.vws_idx += 1
         self.update_view()
-        self.get_info()
         
     def add_spk(self):
         self.vwr.layers["asc_slc"].selected_label = 1
     
     def rmv_spk(self):
         self.vwr.layers["asc_slc"].selected_label = 2
-        
-    # Shorcuts ----------------------------------------------------------------
-        
+
     def hide_mask(self):
         self.vwr.layers["asc_msk"].visible = 0
         self.vwr.layers["asc_slc"].visible = 0
@@ -196,7 +193,7 @@ class AnnotateASC:
         self.cls_add.toggled.connect(self.add_spk)
         self.cls_rmv.toggled.connect(self.rmv_spk)
         
-#%% Class(AnnotateASC) : shortcuts -------------------------------------------- 
+        # Shortcuts -----------------------------------------------------------
 
         @self.vwr.bind_key("PageDown", overwrite=True)
         def _prev_view(vwr):
@@ -212,7 +209,7 @@ class AnnotateASC:
             yield
             self.vwr.layers["asc_slc"].mode = "paint"
 
-        @self.vwr.bind_key("Delete", overwrite=True)
+        @self.vwr.bind_key("End", overwrite=True)
         def _hide_labels_key(viewer):
             self.hide_mask()
             yield

@@ -87,32 +87,43 @@ class AnnotateNCL:
             self.ncl_ann = {
                 "y"      : [],
                 "x"      : [],
-                "idx"    : [],
+                "idxs"   : [],
                 "coords" : [], 
                 "class"  : [],
                 }
         else:
+            
             with open(self.ncl_ann_path, "rb") as file:
                 self.ncl_ann = pickle.load(file)
                 
-                        
+            # Update asc_slc
+            for i, idx in enumerate(self.ncl_ann["idxs"]):
+                self.ncl_slc[idx] = self.ncl_ann["class"][i]
+                
     def update_select(self, tag):
                 
         # Fetch & update selected points
         idxs = list(self.vwr.layers["points"].selected_data)
         
+        if not idxs:
+            return   
+        
+        # Update points layer
         self.ncl_slc[idxs] = tag
         self.vwr.layers["points"].features["class_label"] = self.ncl_slc
         self.vwr.layers["points"].refresh_colors()
         self.vwr.layers["points"].selected_data = set()
-        self.get_info()
-        
-        if not idxs:
-            return    
-        
-        # Save ncl_ann
+                
+        # Update and save ncl_ann
+        idxs = np.where(self.ncl_slc != 0)[0]
+        self.ncl_ann["y"] = self.ncl_ctd[idxs, 0]
+        self.ncl_ann["x"] = self.ncl_ctd[idxs, 1]
+        self.ncl_ann["idxs"] = idxs
+        self.ncl_ann["coords"] = [self.ncl_prp["coords"][idx] for idx in idxs]
+        self.ncl_ann["class"] = self.ncl_slc[idxs]
         with open(self.ncl_ann_path, "wb") as file:
             pickle.dump(self.ncl_ann, file)
+        self.get_info()
                 
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 
@@ -122,16 +133,18 @@ class AnnotateNCL:
 
     def update_view(self):
         self.load_data()
-        self.vwr.layers["stk_nrm"].data = self.ncl_nrm
+        self.vwr.layers["stk_nrm"].data = self.stk_nrm
         self.vwr.layers["points" ].data = self.ncl_ctd
+        self.vwr.layers["points" ].features = {"class_label": self.ncl_slc}
         self.update_select(0)
         self.auto_contrast()
+        self.get_info()
         
     def update_channel(self):
         self.chn_idx = self.vwr.dims.current_step[0]
         self.get_info()
            
-    # Buttons -----------------------------------------------------------------
+    # Buttons & shortcuts -----------------------------------------------------
     
     def prev_view(self):
         if self.vws_idx > 0:
@@ -143,7 +156,11 @@ class AnnotateNCL:
             self.vws_idx += 1
         self.update_view()
         
-
+    def hide_mask(self):
+        self.vwr.layers["points"].visible = 0
+        
+    def show_mask(self):
+        self.vwr.layers["points"].visible = 1
         
 #%% Class(AnnotateNCL) : init_viewer() ----------------------------------------       
 
@@ -201,6 +218,22 @@ class AnnotateNCL:
 
         # "update_channel()"
         self.vwr.dims.events.current_step.connect(self.update_channel)
+        
+        # Shortcuts -----------------------------------------------------------
+        
+        @self.vwr.bind_key("PageDown", overwrite=True)
+        def _prev_view(vwr):
+            self.prev_view()
+                    
+        @self.vwr.bind_key("PageUp", overwrite=True)
+        def _next_view(vwr):
+            self.next_view()
+        
+        @self.vwr.bind_key("End", overwrite=True)
+        def _hide_labels_key(viewer):
+            self.hide_mask()
+            yield
+            self.show_mask()
                         
 #%% Class(AnnotateNCL) : init_layers() ----------------------------------------
 
@@ -217,12 +250,13 @@ class AnnotateNCL:
         self.vwr.add_points(
             self.ncl_ctd, name="points", visible=1,
             blending="translucent", size=5, border_width=0.0,
-            features={"class_label": self.ncl_ann},
+            features={"class_label": self.ncl_slc},
             face_color="class_label",
             face_color_cycle=self.color_map,
             opacity=1.0, 
             )
         self.vwr.layers["points"].mode = "select"
+        self.vwr.layers["points"].highlight_box = False # debug
                         
 #%% Class(AnnotateNCL) : info() -----------------------------------------------
 
@@ -233,7 +267,7 @@ class AnnotateNCL:
         classify_str = []
         for key, val in self.ncl_class_map.items():    
             classify_str.append(
-                f"{val['class']} : {np.sum(self.ncl_ann == val['tag'])}\n"
+                f"{val['class']} : {np.sum(self.ncl_ann['class'] == val['tag'])}\n"
                 )
         
         self.info.setText(
@@ -249,4 +283,3 @@ if __name__ == "__main__":
     ann = AnnotateNCL(main)
     ncl_prp = ann.ncl_prp
     ncl_ann = ann.ncl_ann
-    

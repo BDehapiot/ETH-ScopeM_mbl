@@ -273,10 +273,20 @@ def get_obj_mask(
     
     return msk
 
-def get_mask_from_props(prp, shape=(2048, 2048)):
+# def get_mask_from_props(prp, shape=(2048, 2048)):
+#     msk = np.zeros(shape, dtype=bool)
+#     for coords in prp["coords"]:
+#         msk[tuple(coords.T)] = True
+#     return msk
+
+def get_mask_from_coords(coords, labels=None, shape=(2048, 2048)):
     msk = np.zeros(shape, dtype=bool)
-    for coords in prp["coords"]:
-        msk[tuple(coords.T)] = True
+    if labels is None:
+        for coord in coords:
+            msk[tuple(coord.T)] = True
+    else:
+        for c, coord in enumerate(coords):
+            msk[tuple(coord.T)] = labels[c]
     return msk
 
 #%% function(s) : get_obj_properties() ----------------------------------------
