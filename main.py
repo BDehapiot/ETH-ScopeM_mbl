@@ -18,7 +18,7 @@ from functions import (
     get_nuclei_stats, format_nuclei_stats,
     get_asc_stats, format_asc_stats,
     get_asc_distances, format_asc_distances,
-    get_obj_crops, get_crops_processed,
+    get_obj_crops, get_mask_from_coords,
     plot,
     )
 
@@ -27,6 +27,16 @@ from bdtools.model.model import Model
 
 # scipy
 from scipy.stats import entropy
+
+#%% Comments ------------------------------------------------------------------
+
+"""
+The current work is to work on measure and analyse, refering to the previous
+version of the code but also looking for simplifications. Still need to update
+the plots, taking into account the addition of the speckle layer. BTW the asc
+classification model is not enough annotated and would requires to process more
+images. Also add plots to display.
+"""
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -38,7 +48,7 @@ main_parameters = {
     "force_predict_asc"     : 1,
     "force_classify_nuclei" : 1,
     "force_classify_asc"    : 1,
-    "force_measure"         : 0,
+    "force_measure"         : 1,
     "force_analyse"         : 0,
     
     # Paths
@@ -625,6 +635,114 @@ class Main:
 #%% Class(Main) : measure() ---------------------------------------------------
 
     def measure(self):
+        
+        for p, vws_path in enumerate(self.vws_paths):
+            
+            if p == 0:
+            
+                # Paths
+                pvw_msk_path = vws_path / "preview_mask.tif"
+                stk_nrm_path = vws_path / "stack_norm.tif"
+                ncl_prp_path = vws_path / "nuclei_properties.pkl"
+                ncl_cls_path = vws_path / "nuclei_classes.pkl"  
+                ncl_sts_path = vws_path / "nuclei_stats.pkl"  
+                asc_prp_path = vws_path / "asc_properties.pkl"  
+                asc_cls_path = vws_path / "asc_classes.pkl"  
+                asc_sts_path = vws_path / "asc_stats.pkl" 
+    
+                if ((self.force_measure > 0 and not ncl_sts_path.exists()) 
+                    or self.force_measure == 2):   
+                    
+                    # Log
+                    t0i = time.time()
+                    log_str = f"Main() : measure() : {vws_path.name}"
+                    print("-" * len(log_str))
+                    print(log_str)
+                    print("-" * len(log_str)) 
+                    
+                    # Load --------------------------------------------------------
+                
+                    t0 = time.time()
+    
+                    pvw_msk = io.imread(pvw_msk_path)
+                    stk_nrm = io.imread(stk_nrm_path).astype("float32") / 255
+                    with open(ncl_prp_path, "rb") as file:
+                        ncl_prp = pickle.load(file)
+                    with open(ncl_cls_path, "rb") as file:
+                        ncl_cls = pickle.load(file)
+                    with open(asc_prp_path, "rb") as file:
+                        asc_prp = pickle.load(file)
+                    with open(asc_cls_path, "rb") as file:
+                        asc_cls = pickle.load(file)
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - load")
+                
+                    # Get crops ---------------------------------------------------
+                    
+                    t0 = time.time()
+                    
+                    ncl_crp = get_obj_crops(
+                        stk_nrm, asc_prp["y"], asc_prp["x"], 
+                        crop_size=self.crop_size // 2 ** self.stk_level, 
+                        )
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get crops")
+                    
+                    # Get nuclei stats --------------------------------------------
+                        
+                    t0 = time.time()
+    
+                    ncl_sts = get_nuclei_stats(
+                        ncl_crp, self.channels, vws_path)
+                                   
+                    self.ncl_sts = ncl_sts
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get nuclei stats")
+                    
+                    # Get asc data ------------------------------------------------
+                        
+                    t0 = time.time()
+                    
+                    asc_msk = get_mask_from_coords(
+                        asc_prp["coords"], 
+                        labels=asc_cls["class"], 
+                        shape=stk_nrm[0, ...].shape
+                        )
+                                    
+                    asc_sts = get_asc_stats(
+                        pvw_msk, ncl_prp, asc_prp, asc_cls, vws_path, 
+                        pvw_level=self.pvw_level, stk_level=self.stk_level, 
+                        )
+                    
+                    self.asc_sts = asc_sts
+                    
+                    asc_dst = get_asc_distances(
+                        asc_msk > 0, ncl_prp, self.ncl_classes,
+                        stk_level=self.stk_level
+                        )
+                    
+                    spk_dst = get_asc_distances(
+                        asc_msk == 1, ncl_prp, self.ncl_classes,
+                        stk_level=self.stk_level
+                        )
+                    
+                    self.asc_dst = asc_dst
+                    self.spk_dst = spk_dst
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get asc data")
+                
+                pass
+            
+            pass
+    
+
+#%% Class(Main) : measure_legacy() --------------------------------------------
+
+    def measure_legacy(self):
                 
         for p, vws_path in enumerate(self.vws_paths):
 
@@ -922,3 +1040,7 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)  
+    ncl_sts = main.ncl_sts
+    asc_sts = main.asc_sts
+    asc_dst = main.asc_dst
+    spk_dst = main.spk_dst

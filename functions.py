@@ -280,11 +280,12 @@ def get_obj_mask(
 #     return msk
 
 def get_mask_from_coords(coords, labels=None, shape=(2048, 2048)):
-    msk = np.zeros(shape, dtype=bool)
     if labels is None:
+        msk = np.zeros(shape, dtype=bool)
         for coord in coords:
             msk[tuple(coord.T)] = True
     else:
+        msk = np.zeros(shape, dtype="uint8")
         for c, coord in enumerate(coords):
             msk[tuple(coord.T)] = labels[c]
     return msk
@@ -400,11 +401,18 @@ def get_crops_processed(crp):
     
 #%% function(s) : nuclei ------------------------------------------------------
     
-def get_nuclei_stats(crp, channels):        
-    ncl_sts = {"avg" : {}, "std" : {}}
+# def get_nuclei_stats(ncl_crp, channels, vws_path):        
+#     ncl_sts = {"avg" : {}}
+#     for c, chn in enumerate(channels):
+#         ncl_sts["avg"][chn] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
+#     return ncl_sts
+
+def get_nuclei_stats(ncl_crp, channels, vws_path):        
+    ncl_sts = {}
     for c, chn in enumerate(channels):
-        ncl_sts["avg"][chn] = np.mean(crp[:, c, ...], axis=(1, 2))
-        ncl_sts["std"][chn] = np.std( crp[:, c, ...], axis=(1, 2))
+        ncl_sts[f"{chn}_int"] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
+    ncl_sts = pd.DataFrame(ncl_sts)
+    ncl_sts.insert(0, "view", vws_path.name)
     return ncl_sts
 
 def format_nuclei_stats(
@@ -449,37 +457,75 @@ def format_nuclei_stats(
 
 #%% function(s) : asc ---------------------------------------------------------
 
+# def get_asc_stats(
+#         pvw_msk, ncl_ctd, asc_msk,
+#         pvw_level=4, stk_level=1
+#         ):
+    
+#     # Init.
+#     asc_sts = {}
+#     pvw_factor = (2 ** pvw_level) ** 2
+#     asc_factor = (2 ** stk_level) ** 2
+    
+#     # Areas
+#     all_area = np.sum(pvw_msk > 0) * pvw_factor
+#     asc_area = np.sum(asc_msk > 0) * asc_factor
+#     asc_area_nrm = asc_area / all_area
+    
+#     # Counts
+#     ncl_num = len(ncl_ctd["y"][0])
+#     asc_num = np.max(label(asc_msk > 0))
+#     asc_spk_num = np.max(label(asc_msk > 200))
+#     asc_num_ratio = asc_num / ncl_num
+#     asc_spk_num_ratio = asc_spk_num / ncl_num
+            
+#     # Append
+#     asc_sts["all_area"         ] = all_area
+#     asc_sts["asc_area"         ] = asc_area
+#     asc_sts["asc_area_ratio"   ] = asc_area_nrm
+#     asc_sts["ncl_num"          ] = ncl_num
+#     asc_sts["asc_num"          ] = asc_num
+#     asc_sts["asc_spk_num"      ] = asc_spk_num
+#     asc_sts["asc_num_ratio"    ] = asc_num_ratio
+#     asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
+    
+#     return asc_sts
+
 def get_asc_stats(
-        pvw_msk, ncl_ctd, asc_msk,
-        pvw_level=4, stk_level=1
-        ):
+    pvw_msk, ncl_prp, asc_prp, asc_cls,
+    vws_path, pvw_level=4, stk_level=1, 
+    ):
     
     # Init.
     asc_sts = {}
     pvw_factor = (2 ** pvw_level) ** 2
     asc_factor = (2 ** stk_level) ** 2
-    
+        
     # Areas
     all_area = np.sum(pvw_msk > 0) * pvw_factor
-    asc_area = np.sum(asc_msk > 0) * asc_factor
-    asc_area_nrm = asc_area / all_area
+    asc_area = np.sum(asc_prp["area"]) * asc_factor
+    asc_area_ratio = asc_area / all_area
     
     # Counts
-    ncl_num = len(ncl_ctd["y"][0])
-    asc_num = np.max(label(asc_msk > 0))
-    asc_spk_num = np.max(label(asc_msk > 200))
+    ncl_num = len(ncl_prp["y"])
+    asc_num = len(asc_prp["y"])
+    spk_num = (asc_cls["class"] == 1).sum()
     asc_num_ratio = asc_num / ncl_num
-    asc_spk_num_ratio = asc_spk_num / ncl_num
+    spk_num_ratio = spk_num / ncl_num
             
     # Append
-    asc_sts["all_area"         ] = all_area
-    asc_sts["asc_area"         ] = asc_area
-    asc_sts["asc_area_ratio"   ] = asc_area_nrm
-    asc_sts["ncl_num"          ] = ncl_num
-    asc_sts["asc_num"          ] = asc_num
-    asc_sts["asc_spk_num"      ] = asc_spk_num
-    asc_sts["asc_num_ratio"    ] = asc_num_ratio
-    asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
+    asc_sts["all_area"       ] = all_area
+    asc_sts["asc_area"       ] = asc_area
+    asc_sts["asc_area_ratio" ] = asc_area_ratio
+    asc_sts["ncl_num"        ] = ncl_num
+    asc_sts["asc_num"        ] = asc_num
+    asc_sts["spk_num"        ] = spk_num
+    asc_sts["asc_num_ratio"  ] = asc_num_ratio
+    asc_sts["spk_num_ratio"  ] = spk_num_ratio
+    
+    # Format
+    asc_sts = pd.DataFrame([asc_sts])
+    asc_sts.insert(0, "view", vws_path.name)
     
     return asc_sts
 
@@ -488,17 +534,16 @@ def format_asc_stats(asc_sts, vws_path):
     asc_sts_df.insert(0, "view", vws_path.name)
     return asc_sts_df
 
-def get_asc_distances(asc_msk, ncl_ctd, classes, stk_level=1):
+def get_asc_distances(asc_msk, ncl_prp, classes, stk_level=1):
             
     # Get edt
     asc_edt = distance_transform_edt(~asc_msk)
     
     # Get asc distances
-    coords = (
-        ncl_ctd["y"][stk_level].astype(int), 
-        ncl_ctd["x"][stk_level].astype(int),
-        )
-    asc_dst = asc_edt[coords]
+    asc_dst = asc_edt[(
+        np.array(ncl_prp["y"]).astype(int), 
+        np.array(ncl_prp["x"]).astype(int),
+        )]
     
     # Scale acc. to stk_level
     asc_dst *= 2 ** stk_level
