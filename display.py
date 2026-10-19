@@ -233,7 +233,7 @@ class Display:
         @self.vwr.bind_key("PageUp", overwrite=True)
         def _next_view(vwr):
             self.next_view()
-
+            
 #%% Class(Display) : init_layers() --------------------------------------------
 
     def init_layers(self):  
@@ -271,5 +271,3 @@ if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     display = Display(main)
     napari.run()
-    
-    asc_cls = display.asc_cls

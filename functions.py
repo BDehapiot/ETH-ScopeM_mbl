@@ -399,6 +399,14 @@ def get_crops_processed(crp):
     crp_prc = crp_prc.astype("float32") / 255 # normalize
     return crp_prc
     
+#%% function(s) : get_object_channel_int() ------------------------------------
+
+def get_object_channel_int(crp, channels):
+    obj_int = {}
+    for c, chn in enumerate(channels):
+        obj_int[f"{chn}_int"] = list(np.mean(crp[:, c, ...], axis=(1, 2)))
+    return obj_int
+
 #%% function(s) : nuclei ------------------------------------------------------
     
 # def get_nuclei_stats(ncl_crp, channels, vws_path):        
@@ -407,53 +415,110 @@ def get_crops_processed(crp):
 #         ncl_sts["avg"][chn] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
 #     return ncl_sts
 
-def get_nuclei_stats(ncl_crp, channels, vws_path):        
-    ncl_sts = {}
+def get_nuclei_intensities(ncl_crp, channels):        
+    ncl_int = {}
     for c, chn in enumerate(channels):
-        ncl_sts[f"{chn}_int"] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
+        ncl_int[f"{chn}_int"] = list(np.mean(ncl_crp[:, c, ...], axis=(1, 2)))
+    return ncl_int
+
+def get_nuclei_stats(ncl_crp, ncl_cls, vws_path, channels, classes):
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def get_nuclei_intensities(ncl_crp, channels, vws_path):        
+        ncl_int = {}
+        for c, chn in enumerate(channels):
+            ncl_int[f"{chn}_int"] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
+        return ncl_int
+    
+    # def get_mean_norm(df):
+    #     dfn = df.copy()
+    #     idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
+    #     dfn[idx] = df[idx] / df[idx].mean()
+    #     idx = df.filter(regex='|'.join(["count"])).columns
+    #     dfn[idx] = df[idx] / df[idx].sum()
+    #     return dfn
+    
+    # def get_class_avg(df):
+    #     dfa = df.copy()
+    #     dfa = df.groupby("class").mean(numeric_only=True)
+    #     dfa = dfa.drop(columns=["idx"])
+    #     dfa.insert(loc=0, column="count", value=df.groupby("class").size())
+    #     dfa = dfa.reset_index()
+    #     dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
+    #     return dfa
+    
+    # Execute -----------------------------------------------------------------
+    
+    # 
+    ncl_sts = {"view" : [vws_path.name] * ncl_crp.shape[0]}
+    
+    # Get nuclei intensities
+    ncl_sts.update(get_nuclei_intensities(ncl_crp, channels, vws_path))
+    
+    # Add view, class & entropy 
+    ncl_sts["class"  ] = ncl_cls["class"  ]
+    ncl_sts["entropy"] = ncl_cls["entropy"]
+    
     ncl_sts = pd.DataFrame(ncl_sts)
-    ncl_sts.insert(0, "view", vws_path.name)
+    
+    # # Extrat data
+    # ncl_df = pd.DataFrame()
+    # n_nuclei = len(ncl_cls["y"])
+    # n_classes = len(classes)
+    # ncl_df["view"   ] = [vws_path.name] * n_nuclei
+    # ncl_df["idx"    ] = np.arange(n_nuclei)
+    # ncl_df["class"  ] = np.array(classes)[ncl_prd]
+    # ncl_df["entropy"] = ncl_ent
+    # for msr in ["avg"]:
+    #     for chn in channels:
+    #         key = f"{chn}_{msr}"
+    #         ncl_df[key] = ncl_sts[msr][chn]
+    # ncl_dfa  = class_avg(ncl_df)
+    # ncl_dfn  = mean_norm(ncl_df)
+    # ncl_dfan = mean_norm(ncl_dfa)
+        
     return ncl_sts
 
-def format_nuclei_stats(
-    ncl_prd, ncl_ent, ncl_sts, vws_path, 
-    channels, classes
-    ):
+# def format_nuclei_stats(
+#     ncl_prd, ncl_ent, ncl_sts, vws_path, 
+#     channels, classes
+#     ):
     
-    def mean_norm(df):
-        dfn = df.copy()
-        idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
-        dfn[idx] = df[idx] / df[idx].mean()
-        idx = df.filter(regex='|'.join(["count"])).columns
-        dfn[idx] = df[idx] / df[idx].sum()
-        return dfn
+#     def mean_norm(df):
+#         dfn = df.copy()
+#         idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
+#         dfn[idx] = df[idx] / df[idx].mean()
+#         idx = df.filter(regex='|'.join(["count"])).columns
+#         dfn[idx] = df[idx] / df[idx].sum()
+#         return dfn
     
-    def class_avg(df):
-        dfa = df.copy()
-        dfa = df.groupby("class").mean(numeric_only=True)
-        dfa = dfa.drop(columns=["idx"])
-        dfa.insert(loc=0, column="count", value=df.groupby("class").size())
-        dfa = dfa.reset_index()
-        dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
-        return dfa
+#     def class_avg(df):
+#         dfa = df.copy()
+#         dfa = df.groupby("class").mean(numeric_only=True)
+#         dfa = dfa.drop(columns=["idx"])
+#         dfa.insert(loc=0, column="count", value=df.groupby("class").size())
+#         dfa = dfa.reset_index()
+#         dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
+#         return dfa
     
-    # Extrat data
-    ncl_df = pd.DataFrame()
-    n_nuclei = ncl_prd.shape[0]
-    n_classes = len(classes)
-    ncl_df["view"   ] = [vws_path.name] * n_nuclei
-    ncl_df["idx"    ] = np.arange(n_nuclei)
-    ncl_df["class"  ] = np.array(classes)[ncl_prd]
-    ncl_df["entropy"] = ncl_ent
-    for msr in ["avg"]:
-        for chn in channels:
-            key = f"{chn}_{msr}"
-            ncl_df[key] = ncl_sts[msr][chn]
-    ncl_dfa  = class_avg(ncl_df)
-    ncl_dfn  = mean_norm(ncl_df)
-    ncl_dfan = mean_norm(ncl_dfa)
+#     # Extrat data
+#     ncl_df = pd.DataFrame()
+#     n_nuclei = ncl_prd.shape[0]
+#     n_classes = len(classes)
+#     ncl_df["view"   ] = [vws_path.name] * n_nuclei
+#     ncl_df["idx"    ] = np.arange(n_nuclei)
+#     ncl_df["class"  ] = np.array(classes)[ncl_prd]
+#     ncl_df["entropy"] = ncl_ent
+#     for msr in ["avg"]:
+#         for chn in channels:
+#             key = f"{chn}_{msr}"
+#             ncl_df[key] = ncl_sts[msr][chn]
+#     ncl_dfa  = class_avg(ncl_df)
+#     ncl_dfn  = mean_norm(ncl_df)
+#     ncl_dfan = mean_norm(ncl_dfa)
         
-    return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
+#     return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
 
 #%% function(s) : asc ---------------------------------------------------------
 
@@ -509,7 +574,7 @@ def get_asc_stats(
     # Counts
     ncl_num = len(ncl_prp["y"])
     asc_num = len(asc_prp["y"])
-    spk_num = (asc_cls["class"] == 1).sum()
+    spk_num = (asc_cls["class"] == 0).sum()
     asc_num_ratio = asc_num / ncl_num
     spk_num_ratio = spk_num / ncl_num
             

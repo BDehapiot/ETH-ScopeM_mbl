@@ -14,10 +14,9 @@ from functions import (
     imread_channel, norm_data, 
     get_slide_metadata, load_view, 
     get_preview_processed, get_preview_stats,
-    get_obj_mask, get_obj_properties, 
-    get_nuclei_stats, format_nuclei_stats,
-    get_asc_stats, format_asc_stats,
-    get_asc_distances, format_asc_distances,
+    get_obj_mask, get_obj_properties, get_object_channel_int,
+    get_nuclei_intensities, get_nuclei_stats,
+    get_asc_stats, get_asc_distances, format_asc_distances,
     get_obj_crops, get_mask_from_coords,
     plot,
     )
@@ -31,11 +30,14 @@ from scipy.stats import entropy
 #%% Comments ------------------------------------------------------------------
 
 """
-The current work is to work on measure and analyse, refering to the previous
+- The current work is to work on measure and analyse, refering to the previous
 version of the code but also looking for simplifications. Still need to update
 the plots, taking into account the addition of the speckle layer. BTW the asc
 classification model is not enough annotated and would requires to process more
 images. Also add plots to display.
+
+- After classifying speckles I will need to filter out small asc that were not
+recognized as speckles.
 """
 
 #%% Inputs --------------------------------------------------------------------
@@ -674,63 +676,86 @@ class Main:
                         asc_prp = pickle.load(file)
                     with open(asc_cls_path, "rb") as file:
                         asc_cls = pickle.load(file)
+                        
+                    self.ncl_prp = ncl_prp
+                    self.ncl_cls = ncl_cls
+                    self.asc_prp = asc_prp
+                    self.asc_cls = asc_cls
                     
                     t1 = time.time()
                     print(f"{t1 - t0:.3f}s - load")
                 
-                    # Get crops ---------------------------------------------------
+                    # Get nuclei intensities --------------------------------------
                     
                     t0 = time.time()
                     
                     ncl_crp = get_obj_crops(
+                        stk_nrm, ncl_prp["y"], ncl_prp["x"], 
+                        crop_size=self.crop_size // 2 ** self.stk_level, 
+                        )
+                    
+                    ncl_int = {
+                        "y" : ncl_prp["y"], 
+                        "x" : ncl_prp["x"], 
+                        } 
+                    ncl_int.update(
+                        get_object_channel_int(ncl_crp, self.channels))
+                    
+                    self.ncl_int = ncl_int
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - Get nuclei intensities")
+                    
+                    # Get asc intensities -----------------------------------------
+                        
+                    t0 = time.time()
+    
+                    asc_crp = get_obj_crops(
                         stk_nrm, asc_prp["y"], asc_prp["x"], 
                         crop_size=self.crop_size // 2 ** self.stk_level, 
                         )
                     
-                    t1 = time.time()
-                    print(f"{t1 - t0:.3f}s - get crops")
+                    asc_int = {
+                        "y" : asc_prp["y"], 
+                        "x" : asc_prp["x"], 
+                        } 
+                    asc_int.update(
+                        get_object_channel_int(asc_crp, self.channels))
                     
-                    # Get nuclei stats --------------------------------------------
-                        
-                    t0 = time.time()
-    
-                    ncl_sts = get_nuclei_stats(
-                        ncl_crp, self.channels, vws_path)
-                                   
-                    self.ncl_sts = ncl_sts
+                    self.asc_int = asc_int
                     
                     t1 = time.time()
-                    print(f"{t1 - t0:.3f}s - get nuclei stats")
-                    
+                    print(f"{t1 - t0:.3f}s - get asc intensities")
+                                        
                     # Get asc data ------------------------------------------------
                         
-                    t0 = time.time()
+                    # t0 = time.time()
                     
-                    asc_msk = get_mask_from_coords(
-                        asc_prp["coords"], 
-                        labels=asc_cls["class"], 
-                        shape=stk_nrm[0, ...].shape
-                        )
+                    # asc_msk = get_mask_from_coords(
+                    #     asc_prp["coords"], 
+                    #     labels=asc_cls["class"], 
+                    #     shape=stk_nrm[0, ...].shape
+                    #     )
                                     
-                    asc_sts = get_asc_stats(
-                        pvw_msk, ncl_prp, asc_prp, asc_cls, vws_path, 
-                        pvw_level=self.pvw_level, stk_level=self.stk_level, 
-                        )
+                    # asc_sts = get_asc_stats(
+                    #     pvw_msk, ncl_prp, asc_prp, asc_cls, vws_path, 
+                    #     pvw_level=self.pvw_level, stk_level=self.stk_level, 
+                    #     )
                     
-                    self.asc_sts = asc_sts
+                    # self.asc_sts = asc_sts
                     
-                    asc_dst = get_asc_distances(
-                        asc_msk > 0, ncl_prp, self.ncl_classes,
-                        stk_level=self.stk_level
-                        )
+                    # asc_dst = get_asc_distances(
+                    #     asc_msk > 0, ncl_prp, self.ncl_classes,
+                    #     stk_level=self.stk_level
+                    #     )
                     
-                    spk_dst = get_asc_distances(
-                        asc_msk == 1, ncl_prp, self.ncl_classes,
-                        stk_level=self.stk_level
-                        )
+                    # spk_dst = get_asc_distances(
+                    #     asc_msk == 1, ncl_prp, self.ncl_classes,
+                    #     stk_level=self.stk_level
+                    #     )
                     
-                    self.asc_dst = asc_dst
-                    self.spk_dst = spk_dst
+                    # self.asc_dst = asc_dst
+                    # self.spk_dst = spk_dst
                     
                     t1 = time.time()
                     print(f"{t1 - t0:.3f}s - get asc data")
@@ -1040,7 +1065,13 @@ class Main:
 
 if __name__ == "__main__":
     main = Main(parameters=main_parameters)  
-    ncl_sts = main.ncl_sts
-    asc_sts = main.asc_sts
-    asc_dst = main.asc_dst
-    spk_dst = main.spk_dst
+    
+    ncl_prp = main.ncl_prp
+    ncl_cls = main.ncl_cls
+    ncl_int = main.ncl_int
+    
+    asc_prp = main.asc_prp
+    asc_cls = main.asc_cls
+    asc_int = main.asc_int
+
+
