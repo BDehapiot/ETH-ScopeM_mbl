@@ -273,12 +273,6 @@ def get_obj_mask(
     
     return msk
 
-# def get_mask_from_props(prp, shape=(2048, 2048)):
-#     msk = np.zeros(shape, dtype=bool)
-#     for coords in prp["coords"]:
-#         msk[tuple(coords.T)] = True
-#     return msk
-
 def get_mask_from_coords(coords, labels=None, shape=(2048, 2048)):
     if labels is None:
         msk = np.zeros(shape, dtype=bool)
@@ -399,13 +393,72 @@ def get_crops_processed(crp):
     crp_prc = crp_prc.astype("float32") / 255 # normalize
     return crp_prc
     
-#%% function(s) : get_object_channel_int() ------------------------------------
+#%% function(s) : get_obj_intensities() ---------------------------------------
 
-def get_object_channel_int(crp, channels):
+def get_obj_intensities(crp, channels):
     obj_int = {}
     for c, chn in enumerate(channels):
         obj_int[f"{chn}_int"] = list(np.mean(crp[:, c, ...], axis=(1, 2)))
     return obj_int
+
+#%% function(s) : get_asc_distances() -----------------------------------------
+
+def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
+            
+    # Get edt
+    asc_edt = distance_transform_edt(~asc_msk)
+    
+    # Get asc distances
+    asc_dst = asc_edt[(
+        np.array(ncl_prp["y"]).astype(int), 
+        np.array(ncl_prp["x"]).astype(int),
+        )]
+    
+    # Scale acc. to stk_level
+    asc_dst *= 2 ** stk_level
+    
+    return asc_dst
+
+#%% function(s) : format data -------------------------------------------------
+
+def format_ncl_data(ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path):
+    
+    n = len(ncl_prp["y"])
+    ncl_int.pop("y") ; ncl_int.pop("x")
+    asc_dst.pop("y") ; asc_dst.pop("x")
+    ncl_data = {
+        "view"         : [vws_path.name] * n,
+        "y"            : ncl_prp["y"],
+        "x"            : ncl_prp["x"],
+        "area"         : ncl_prp["area"],
+        "eccentricity" : ncl_prp["eccentricity"],
+        "class"        : ncl_cls["class"],
+        "entropy"      : ncl_cls["entropy"],
+        }
+    ncl_data.update(
+        {k: v for k, v in asc_dst.items() if k not in ("x", "y")})
+    ncl_data.update(
+        {k: v for k, v in ncl_int.items() if k not in ("x", "y")})
+    
+    return pd.DataFrame(ncl_data)
+
+def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
+    
+    n = len(asc_prp["y"])
+    asc_int.pop("y") ; asc_int.pop("x")
+    asc_data = {
+        "view"         : [vws_path.name] * n,
+        "y"            : asc_prp["y"],
+        "x"            : asc_prp["x"],
+        "area"         : asc_prp["area"],
+        "eccentricity" : asc_prp["eccentricity"],
+        "class"        : asc_cls["class"],
+        "entropy"      : asc_cls["entropy"],
+        }
+    asc_data.update(
+        {k: v for k, v in asc_int.items() if k not in ("x", "y")})
+    
+    return pd.DataFrame(asc_data)
 
 #%% function(s) : nuclei ------------------------------------------------------
     
@@ -599,19 +652,19 @@ def format_asc_stats(asc_sts, vws_path):
     asc_sts_df.insert(0, "view", vws_path.name)
     return asc_sts_df
 
-def get_asc_distances(asc_msk, ncl_prp, classes, stk_level=1):
+# def get_asc_distances(asc_msk, ncl_prp, classes, stk_level=1):
             
-    # Get edt
-    asc_edt = distance_transform_edt(~asc_msk)
+#     # Get edt
+#     asc_edt = distance_transform_edt(~asc_msk)
     
-    # Get asc distances
-    asc_dst = asc_edt[(
-        np.array(ncl_prp["y"]).astype(int), 
-        np.array(ncl_prp["x"]).astype(int),
-        )]
+#     # Get asc distances
+#     asc_dst = asc_edt[(
+#         np.array(ncl_prp["y"]).astype(int), 
+#         np.array(ncl_prp["x"]).astype(int),
+#         )]
     
-    # Scale acc. to stk_level
-    asc_dst *= 2 ** stk_level
+#     # Scale acc. to stk_level
+#     asc_dst *= 2 ** stk_level
     
     return asc_dst
 
