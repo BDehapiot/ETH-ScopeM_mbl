@@ -395,10 +395,15 @@ def get_crops_processed(crp):
     
 #%% function(s) : get_obj_intensities() ---------------------------------------
 
-def get_obj_intensities(crp, channels):
+""" normalizaion not working """
+
+def get_obj_intensities(crp, channels, normalize=True):
     obj_int = {}
     for c, chn in enumerate(channels):
-        obj_int[f"{chn}_int"] = list(np.mean(crp[:, c, ...], axis=(1, 2)))
+        _obj_int = np.mean(crp[:, c, ...], axis=(1, 2))
+        if normalize:
+            _obj_int /= np.mean(_obj_int) 
+        obj_int[f"{chn}_int"] = list(_obj_int)
     return obj_int
 
 #%% function(s) : get_asc_distances() -----------------------------------------
@@ -459,6 +464,10 @@ def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
         {k: v for k, v in asc_int.items() if k not in ("x", "y")})
     
     return pd.DataFrame(asc_data)
+
+#%% function(s) : plot --------------------------------------------------------
+
+
 
 #%% function(s) : nuclei ------------------------------------------------------
     

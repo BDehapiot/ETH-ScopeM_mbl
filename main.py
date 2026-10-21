@@ -50,8 +50,8 @@ main_parameters = {
     "force_predict_asc"     : 1,
     "force_classify_nuclei" : 1,
     "force_classify_asc"    : 1,
-    "force_measure"         : 1,
-    "force_analyse"         : 1,
+    "force_measure"         : 2,
+    "force_analyse"         : 0,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
@@ -83,11 +83,12 @@ main_parameters = {
     # "min_corr"              : 0.8, 
     
     # Measure()
-    "crop_size"             : 64, # in pixels at stk_level = 0
+    "crop_size"             : 64,   # in pixels at stk_level = 0
+    "norm_int"              : True, # normalize fluo. int. (per channel)
     
     # Analyse()
-    "asc_bin_size"          : 8,  # in pixels at stk_level = 0
-    "asc_bin_max"           : 64, # in pixels at stk_level = 0
+    "asc_bin_size"          : 8,    # in pixels at stk_level = 0
+    "asc_bin_max"           : 64,   # in pixels at stk_level = 0
     
     # Maps  -------------------------------------------------------------------
     
@@ -640,146 +641,150 @@ class Main:
         
         for p, vws_path in enumerate(self.vws_paths):
                     
-            # Paths
-            stk_nrm_path  = vws_path / "stack_norm.tif"
-            ncl_prp_path  = vws_path / "nuclei_properties.pkl"
-            ncl_cls_path  = vws_path / "nuclei_classes.pkl" 
-            ncl_int_path  = vws_path / "nuclei_intensities.pkl" 
-            asc_prp_path  = vws_path / "asc_properties.pkl"  
-            asc_cls_path  = vws_path / "asc_classes.pkl"  
-            asc_int_path  = vws_path / "asc_intensities.pkl" 
-            asc_dst_path  = vws_path / "asc_distances.pkl"
-            ncl_data_path = vws_path / "nuclei_data.csv"
-            asc_data_path = vws_path / "asc_data.csv"
+            if p == 0:
             
-            if ((self.force_measure > 0 and not ncl_int_path.exists()) 
-                or self.force_measure == 2):   
+                # Paths
+                stk_nrm_path  = vws_path / "stack_norm.tif"
+                ncl_prp_path  = vws_path / "nuclei_properties.pkl"
+                ncl_cls_path  = vws_path / "nuclei_classes.pkl" 
+                ncl_int_path  = vws_path / "nuclei_intensities.pkl" 
+                asc_prp_path  = vws_path / "asc_properties.pkl"  
+                asc_cls_path  = vws_path / "asc_classes.pkl"  
+                asc_int_path  = vws_path / "asc_intensities.pkl" 
+                asc_dst_path  = vws_path / "asc_distances.pkl"
+                ncl_data_path = vws_path / "nuclei_data.csv"
+                asc_data_path = vws_path / "asc_data.csv"
                 
-                # Log
-                t0i = time.time()
-                log_str = f"Main() : measure() : {vws_path.name}"
-                print("-" * len(log_str))
-                print(log_str)
-                print("-" * len(log_str)) 
-                
-                # Load --------------------------------------------------------
-            
-                t0 = time.time()
-
-                stk_nrm = io.imread(stk_nrm_path).astype("float32") / 255
-                with open(ncl_prp_path, "rb") as file: 
-                    ncl_prp = pickle.load(file)
-                with open(ncl_cls_path, "rb") as file: 
-                    ncl_cls = pickle.load(file)
-                with open(asc_prp_path, "rb") as file:
-                    asc_prp = pickle.load(file)
-                with open(asc_cls_path, "rb") as file:
-                    asc_cls = pickle.load(file)
+                if ((self.force_measure > 0 and not ncl_int_path.exists()) 
+                    or self.force_measure == 2):   
                     
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - load")
-            
-                # Get nuclei intensities --------------------------------------
-                
-                t0 = time.time()
-                
-                ncl_crp = get_obj_crops(
-                    stk_nrm, ncl_prp["y"], ncl_prp["x"], 
-                    crop_size=self.crop_size // 2 ** self.stk_level, 
-                    )
-                
-                ncl_int = {
-                    "y" : ncl_prp["y"], 
-                    "x" : ncl_prp["x"], 
-                    } 
-                ncl_int.update(
-                    get_obj_intensities(ncl_crp, self.channels))
-
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - get nuclei intensities")
-                
-                # Get asc intensities -----------------------------------------
+                    # Log
+                    t0i = time.time()
+                    log_str = f"Main() : measure() : {vws_path.name}"
+                    print("-" * len(log_str))
+                    print(log_str)
+                    print("-" * len(log_str)) 
                     
-                t0 = time.time()
-
-                asc_crp = get_obj_crops(
-                    stk_nrm, asc_prp["y"], asc_prp["x"], 
-                    crop_size=self.crop_size // 2 ** self.stk_level, 
-                    )
+                    # Load --------------------------------------------------------
                 
-                asc_int = {
-                    "y" : asc_prp["y"], 
-                    "x" : asc_prp["x"], 
-                    } 
-                asc_int.update(
-                    get_obj_intensities(asc_crp, self.channels))
-
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - get asc intensities")
-                                    
-                # Get asc distances -------------------------------------------
+                    t0 = time.time()
+    
+                    stk_nrm = io.imread(stk_nrm_path).astype("float32") / 255
+                    with open(ncl_prp_path, "rb") as file: 
+                        ncl_prp = pickle.load(file)
+                    with open(ncl_cls_path, "rb") as file: 
+                        ncl_cls = pickle.load(file)
+                    with open(asc_prp_path, "rb") as file:
+                        asc_prp = pickle.load(file)
+                    with open(asc_cls_path, "rb") as file:
+                        asc_cls = pickle.load(file)
+                        
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - load")
+                
+                    # Get nuclei intensities --------------------------------------
                     
-                t0 = time.time()
-                
-                asc_msk = get_mask_from_coords(
-                    asc_prp["coords"], 
-                    labels=np.array(asc_cls["class"]) + 1, 
-                    shape=stk_nrm[0, ...].shape
-                    )
-                                   
-                asc_dst = {
-                    "y" : ncl_prp["y"],
-                    "x" : ncl_prp["x"],
-                    "asc_dst" : list(get_asc_distances(
-                        asc_msk > 0 , ncl_prp, stk_level=1)),
-                    "spk_dst" : list(get_asc_distances(
-                        asc_msk == 1, ncl_prp, stk_level=1)),
-                    }
-                
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - get asc distances")
-                
-                # Format data -------------------------------------------------
-                
-                t0 = time.time()
-                
-                ncl_data = format_ncl_data(
-                    ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path)
-                
-                asc_data = format_asc_data(
-                    asc_prp, asc_cls, asc_int, vws_path)
-                
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - format data")
-                
-                # Save --------------------------------------------------------
-                
-                t0 = time.time()
-                
-                with open(ncl_int_path, "wb") as file:
-                    pickle.dump(ncl_int, file)
-                with open(asc_int_path, "wb") as file:
-                    pickle.dump(asc_int, file)
-                with open(asc_dst_path, "wb") as file:
-                    pickle.dump(asc_dst, file)
-                ncl_data.to_csv(ncl_data_path, index=False)
-                asc_data.to_csv(asc_data_path, index=False)
+                    t0 = time.time()
                     
-                # Clear
-                del (
-                    stk_nrm, 
-                    ncl_prp, ncl_int,
-                    asc_prp, asc_cls, asc_int, asc_dst,
-                    ncl_data, asc_data,
-                    )
-                tf.keras.backend.clear_session()
-                gc.collect()
-                
-                t1 = time.time()
-                print(f"{t1 - t0:.3f}s - save")
-                
-                t1f = time.time()
-                print(f"> {t1f - t0i:.3f}s")
+                    ncl_crp = get_obj_crops(
+                        stk_nrm, ncl_prp["y"], ncl_prp["x"], 
+                        crop_size=self.crop_size // 2 ** self.stk_level, 
+                        )
+                    
+                    ncl_int = {
+                        "y" : ncl_prp["y"], 
+                        "x" : ncl_prp["x"], 
+                        } 
+                    ncl_int.update(get_obj_intensities(
+                        ncl_crp, self.channels, normalize=self.norm_int))
+    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get nuclei intensities")
+                    
+                    self.ncl_crp = ncl_crp
+                    
+                    # Get asc intensities -----------------------------------------
+                        
+                    t0 = time.time()
+    
+                    asc_crp = get_obj_crops(
+                        stk_nrm, asc_prp["y"], asc_prp["x"], 
+                        crop_size=self.crop_size // 2 ** self.stk_level, 
+                        )
+                    
+                    asc_int = {
+                        "y" : asc_prp["y"], 
+                        "x" : asc_prp["x"], 
+                        } 
+                    asc_int.update(get_obj_intensities(
+                        asc_crp, self.channels, normalize=self.norm_int))
+    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get asc intensities")
+                                        
+                    # Get asc distances -------------------------------------------
+                        
+                    t0 = time.time()
+                    
+                    asc_msk = get_mask_from_coords(
+                        asc_prp["coords"], 
+                        labels=np.array(asc_cls["class"]) + 1, 
+                        shape=stk_nrm[0, ...].shape
+                        )
+                                       
+                    asc_dst = {
+                        "y" : ncl_prp["y"],
+                        "x" : ncl_prp["x"],
+                        "asc_dst" : list(get_asc_distances(
+                            asc_msk > 0 , ncl_prp, stk_level=1)),
+                        "spk_dst" : list(get_asc_distances(
+                            asc_msk == 1, ncl_prp, stk_level=1)),
+                        }
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - get asc distances")
+                    
+                    # Format data -------------------------------------------------
+                    
+                    t0 = time.time()
+                    
+                    ncl_data = format_ncl_data(
+                        ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path)
+                    
+                    asc_data = format_asc_data(
+                        asc_prp, asc_cls, asc_int, vws_path)
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - format data")
+                    
+                    # Save --------------------------------------------------------
+                    
+                    t0 = time.time()
+                    
+                    with open(ncl_int_path, "wb") as file:
+                        pickle.dump(ncl_int, file)
+                    with open(asc_int_path, "wb") as file:
+                        pickle.dump(asc_int, file)
+                    with open(asc_dst_path, "wb") as file:
+                        pickle.dump(asc_dst, file)
+                    ncl_data.to_csv(ncl_data_path, index=False)
+                    asc_data.to_csv(asc_data_path, index=False)
+                        
+                    # Clear
+                    del (
+                        stk_nrm, 
+                        ncl_prp, ncl_int,
+                        asc_prp, asc_cls, asc_int, asc_dst,
+                        ncl_data, asc_data,
+                        )
+                    tf.keras.backend.clear_session()
+                    gc.collect()
+                    
+                    t1 = time.time()
+                    print(f"{t1 - t0:.3f}s - save")
+                    
+                    t1f = time.time()
+                    print(f"> {t1f - t0i:.3f}s")
 
 #%% Class(Main) : analyse() ---------------------------------------------------
 
@@ -1123,28 +1128,49 @@ if __name__ == "__main__":
     
 #%%
     
-    def get_class_avg(data, classes, vws_path):
+    def get_obj_intensities(crp, channels, normalize=True):
+        obj_int = {}
+        for c, chn in enumerate(channels):
+            _obj_int = np.mean(crp[:, c, ...], axis=(1, 2))
+            if normalize:
+                _obj_int /= np.mean(_obj_int) 
+            obj_int[f"{chn}_int"] = list(_obj_int)
+        return obj_int
+    
+    ncl_crp = main.ncl_crp
+    obj_int = get_obj_intensities(ncl_crp, main.channels, normalize=False)
+    
+    for key, val in obj_int.items():
+        print(np.mean(val))
+        
+    test = obj_int["EpCAM_int"]
+    
+#%%
+    
+    # def get_class_avg(data, classes, vws_path):  
 
-        def format_df(df):
-            df = df.assign(count=counts)
-            df.index = df.index.map(lambda i: classes[i])
-            return df.reset_index(names="class").assign(view=vws_path.name)        
+    #     def format_df(df):
+    #         df = df.assign(count=counts)
+    #         df.index = df.index.map(lambda i: classes[i])
+    #         return df.reset_index(names="class").assign(view=vws_path.name)        
 
-        # Group & avg/std
-        grp = data.drop(columns=["x", "y"], errors="ignore").groupby("class")
-        avg = grp.mean(numeric_only=True)
-        std = grp.std(numeric_only=True)
-        counts = grp.size()
+    #     # Group & avg/std
+    #     grp = data.drop(columns=["x", "y"], errors="ignore").groupby("class")
+    #     avg = grp.mean(numeric_only=True)
+    #     std = grp.std(numeric_only=True)
+    #     counts = grp.size()
     
-        # Reorder
-        avg = format_df(avg)[["view", "class", "count"] + list(avg.columns)]
-        std = format_df(std)[["view", "class", "count"] + list(std.columns)]
+    #     # Reorder
+    #     avg = format_df(avg)[["view", "class", "count"] + list(avg.columns)]
+    #     std = format_df(std)[["view", "class", "count"] + list(std.columns)]
+
+    #     return avg, std
+        
+    # vws_path = main.vws_paths[-1]
+    # ncl_data_avg, ncl_data_std = get_class_avg(ncl_data, main.ncl_classes, vws_path)
+    # asc_data_avg, asc_data_std = get_class_avg(asc_data, main.asc_classes, vws_path)
     
-        return avg, std
-    
-    vws_path = main.vws_paths[-1]
-    ncl_data_cavg, ncl_data_cstd = get_class_avg(ncl_data, main.ncl_classes, vws_path)
-    asc_data_cavg, asc_data_cstd = get_class_avg(asc_data, main.asc_classes, vws_path)
+    # test = asc_data.mean(numeric_only=True, skipna=True)
 
 
 
