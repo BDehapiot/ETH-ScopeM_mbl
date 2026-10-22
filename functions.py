@@ -395,12 +395,10 @@ def get_crops_processed(crp):
     
 #%% function(s) : get_obj_intensities() ---------------------------------------
 
-""" normalizaion not working """
-
 def get_obj_intensities(crp, channels, normalize=True):
     obj_int = {}
     for c, chn in enumerate(channels):
-        _obj_int = np.mean(crp[:, c, ...], axis=(1, 2))
+        _obj_int = np.mean(crp[..., c], axis=(1, 2))
         if normalize:
             _obj_int /= np.mean(_obj_int) 
         obj_int[f"{chn}_int"] = list(_obj_int)
@@ -464,6 +462,27 @@ def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
         {k: v for k, v in asc_int.items() if k not in ("x", "y")})
     
     return pd.DataFrame(asc_data)
+
+#%% function(s) : get_class_avg() ---------------------------------------------
+
+def get_class_avg(data, classes, vws_path):  
+
+    def format_df(df):
+        df = df.assign(count=counts)
+        df.index = df.index.map(lambda i: classes[i])
+        return df.reset_index(names="class").assign(view=vws_path.name)        
+
+    # Group & avg/std
+    grp = data.drop(columns=["x", "y"], errors="ignore").groupby("class")
+    avg = grp.mean(numeric_only=True)
+    std = grp.std(numeric_only=True)
+    counts = grp.size()
+
+    # Reorder
+    avg = format_df(avg)[["view", "class", "count"] + list(avg.columns)]
+    std = format_df(std)[["view", "class", "count"] + list(std.columns)]
+
+    return avg, std
 
 #%% function(s) : plot --------------------------------------------------------
 
