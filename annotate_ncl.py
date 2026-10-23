@@ -7,7 +7,7 @@ from skimage import io
 from main import Main, main_parameters
 
 # functions
-from functions import get_mask_from_props
+from functions import get_mask_from_coords
 
 # Qt
 from qtpy.QtGui import QFont
@@ -76,8 +76,8 @@ class AnnotateNCL:
         self.stk_nrm = io.imread(stk_nrm_path)
         with open(ncl_prp_path, "rb") as file:
             self.ncl_prp = pickle.load(file)
-        self.ncl_msk = get_mask_from_props(
-            self.ncl_prp, shape=self.stk_nrm[0, ...].shape)
+        self.ncl_msk = get_mask_from_coords(
+            self.ncl_prp["coords"], shape=self.stk_nrm[0, ...].shape)
         self.ncl_ctd = np.column_stack((
             self.ncl_prp["y"], self.ncl_prp["x"]))
         self.ncl_slc = np.zeros(self.ncl_ctd.shape[0], dtype="uint8")

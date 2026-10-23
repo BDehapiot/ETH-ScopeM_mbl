@@ -467,24 +467,51 @@ def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
 
 def get_class_avg(data, classes, vws_path):  
 
-    def format_df(df):
-        df = df.assign(count=counts)
-        df.index = df.index.map(lambda i: classes[i])
-        return df.reset_index(names="class").assign(view=vws_path.name)        
+    def _get_class_avg(grp, method="mean"):
+        
+        # Statistics
+        if method == "mean": df = grp.mean(numeric_only=True)
+        if method == "std" : df = grp.std(numeric_only=True)
+        if method == "sem" : df = grp.sem(numeric_only=True)
+            
+        # Count & frequency
+        if "y" in data.columns:
+            count = grp.size()
+            freq = count / len(data)
+        else:
+            count = grp["count"].sum()
+            freq = df["freq"]
 
-    # Group & avg/std
-    grp = data.drop(columns=["x", "y"], errors="ignore").groupby("class")
-    avg = grp.mean(numeric_only=True)
-    std = grp.std(numeric_only=True)
-    counts = grp.size()
+        # Add count & frequency
+        df = df.assign(count=count)
+        df = df.assign(freq=freq)
 
-    # Reorder
-    avg = format_df(avg)[["view", "class", "count"] + list(avg.columns)]
-    std = format_df(std)[["view", "class", "count"] + list(std.columns)]
+        # Format
+        if "y" in data.columns:
+            df.index = df.index.map(lambda i: classes[i])
+            df = df.reset_index(names="class").assign(view=vws_path.name)
+        else:
+            df = df.reset_index(names="class")
 
-    return avg, std
+        cols = [c for c in ["view", "class", "count", "freq"] if c in df.columns]
+        features = [c for c in df.columns if c not in cols]
+        
+        return df[cols + features]
+
+    # Group per class
+    grp = data.drop(columns=["x", "y"], errors="ignore")
+    grp = grp.groupby("class", sort=True)
+        
+    # Format
+    avg = _get_class_avg(grp, method="mean")
+    std = _get_class_avg(grp, method="std")
+    sem = _get_class_avg(grp, method="sem")
+
+    return avg, std, sem
 
 #%% function(s) : plot --------------------------------------------------------
+
+
 
 
 
