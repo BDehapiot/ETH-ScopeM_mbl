@@ -422,6 +422,46 @@ def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
     
     return asc_dst
 
+def bin_distances(
+    dst, ncl_cls, ncl_classes,
+    bin_size=10, bin_max=200, normalize=False, 
+    ):
+    
+    # Nested function(s) ------------------------------------------------------
+    
+    def get_counts(ncl_cls, ncl_classes, normalized=False):
+        counts = np.bincount(
+            ncl_cls, minlength=len(ncl_classes)).astype("float32")
+        total = counts.sum()
+        if normalized and total > 0:
+            return counts / total
+        return counts
+        
+    # Execute -----------------------------------------------------------------
+    
+    # Initialize
+    ncl_cls = np.array(ncl_cls["class"])
+    
+    # Define bins
+    bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+    
+    # Get binned distances
+    dst_bin = []
+    for b, d in enumerate(bins):
+        d0 = 0 if b == 0 else bins[b - 1]
+        dst_bin_cls = ncl_cls[(dst >= d0) & (dst < d)]
+        dst_bin.append(get_counts(
+            dst_bin_cls, ncl_classes, normalized=True))
+    
+    # Normalization (enrichment)
+    if normalize:
+        dst_bin_all = np.stack(get_counts(
+            ncl_cls, ncl_classes, normalized=True))
+        for b, d in enumerate(bins):
+            dst_bin[b] = dst_bin[b] / dst_bin_all
+                
+    return dst_bin
+
 #%% function(s) : format data -------------------------------------------------
 
 def format_ncl_data(ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path):
@@ -508,6 +548,10 @@ def get_class_avg(data, classes, vws_path):
     sem = _get_class_avg(grp, method="sem")
 
     return avg, std, sem
+
+#%% 
+
+
 
 #%% function(s) : plot --------------------------------------------------------
 
@@ -721,7 +765,7 @@ def format_asc_stats(asc_sts, vws_path):
 #     # Scale acc. to stk_level
 #     asc_dst *= 2 ** stk_level
     
-    return asc_dst
+    # return asc_dst
 
 def format_asc_distances(
     asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
