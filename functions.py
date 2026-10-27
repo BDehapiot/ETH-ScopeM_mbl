@@ -3,7 +3,6 @@
 import tifffile
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
@@ -12,16 +11,13 @@ from bdtools.conn import lbl_conn
 from bdtools.norm import norm_pct
 
 # skimage
-from skimage import draw
 from skimage.transform import rescale
-from skimage.feature import peak_local_max
 from skimage.segmentation import watershed
 from skimage.filters import gaussian, threshold_otsu
 from skimage.measure import label, regionprops, regionprops_table
 from skimage.morphology import disk, binary_closing, remove_small_objects
 
 # scipy
-from scipy.stats import pearsonr
 from scipy.ndimage import distance_transform_edt
        
 #%% function(s) : save & load -------------------------------------------------
@@ -299,15 +295,15 @@ def get_obj_properties(nrm, msk):
         )
 
     return {
-        "y"      : list(props["centroid-0"].astype("uint16")),  
-        "x"      : list(props["centroid-1"].astype("uint16")),  
-        "area"   : list(props["area"].astype("uint16")), 
+        "y"      : props["centroid-0"].astype("uint16"),  
+        "x"      : props["centroid-1"].astype("uint16"),  
+        "area"   : props["area"].astype("uint16"), 
         "coords" : [coord.astype("uint16") for coord in props["coords"]], 
-        "eccentricity"   : list(props["eccentricity"].astype("float32")), 
-        "intensity_max"  : list(props["intensity_max"].astype("float32")),  
-        "intensity_min"  : list(props["intensity_min"].astype("float32")), 
-        "intensity_mean" : list(props["intensity_mean"].astype("float32")), 
-        "intensity_std"  : list(props["intensity_std"].astype("float32")), 
+        "eccentricity"   : props["eccentricity"].astype("float32"), 
+        "intensity_max"  : props["intensity_max"].astype("float32"),  
+        "intensity_min"  : props["intensity_min"].astype("float32"), 
+        "intensity_mean" : props["intensity_mean"].astype("float32"), 
+        "intensity_std"  : props["intensity_std"].astype("float32"), 
         }  
 
 #%% function(s) : get_obj_crops() ---------------------------------------------
@@ -316,8 +312,6 @@ def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
 
     # Check inputs
     ndim = stk.ndim
-    if isinstance(ys, list): ys = np.array(ys)
-    if isinstance(xs, list): xs = np.array(xs)
     
     # Pad (acc. to crop half size)
     hlf = crop_size // 2 # crop half size
@@ -355,74 +349,101 @@ def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
     else:
         return np.stack(crops)
     
-# def get_obj_crops(stk, ctd, crop_size=32, crop_fraction=None, stk_level=1):
-    
-#     # Pad (acc. to crop half size)
-#     chs = crop_size // 2 # crop half size
-#     pad_width = ((0, 0), (chs, chs), (chs, chs))
-#     stk = np.pad(stk, pad_width=pad_width, mode="reflect")
+#%% function(s) : get_ncl_intensities() ---------------------------------------
 
-#     # Extract coordinates
-#     ys = ctd["y"][stk_level].astype(int)
-#     xs = ctd["x"][stk_level].astype(int)
-    
-#     # Select random coordinates
-#     if crop_fraction is not None:
-#         crop_idx = np.random.choice(
-#             np.arange(0, len(ys)), 
-#             size=int(len(ys) * crop_fraction), 
-#             replace=False,
-#             )
-#         ys = ys[crop_idx]
-#         xs = xs[crop_idx]
-    
-#     # Extract crops
-#     crops = []
-#     for (y, x) in zip(ys, xs):
-#         y0 = y; y1 = y + crop_size
-#         x0 = x; x1 = x + crop_size
-#         if y1 - y0 != crop_size: print(y0, y1)
-#         if x1 - x0 != crop_size: print(x0, x1)
-#         crops.append(stk[..., y0:y1, x0:x1])
-        
-#     return np.stack(crops)
+# def get_obj_intensities(crp, channels, normalize=True):
+#     obj_int = {}
+#     for c, chn in enumerate(channels):
+#         _obj_int = np.mean(crp[..., c], axis=(1, 2))
+#         if normalize:
+#             _obj_int /= np.mean(_obj_int) 
+#         obj_int[f"{chn}_int"] = _obj_int
+#     return obj_int
 
-def get_crops_processed(crp):
-    crp_prc = np.delete(crp, (0, 4, -1), axis=1) # remove DAPI, ASC & autofluo channels
-    crp_prc = np.transpose(crp_prc, (0, 2, 3, 1)) # transposition
-    crp_prc = crp_prc.astype("float32") / 255 # normalize
-    return crp_prc
+def get_ncl_intensities(
+        stk_nrm, ncl_prp, asc_prp, asc_msk, channels, 
+        crop_size=32, normalize=True,
+        ):
+            
+    # Initialize
     
-#%% function(s) : get_obj_intensities() ---------------------------------------
-
-def get_obj_intensities(crp, channels, normalize=True):
-    obj_int = {}
+    ncl_int = {
+        "y" : ncl_prp["y"], 
+        "x" : ncl_prp["x"],
+        } 
+    
+    channels = channels.copy()
+    if "ASC" in channels:
+        channels.remove("ASC")
+    channels.extend(["ASC_all", "ASC_spk", "ASC_nsp"])
+    
+    # Process ASC channel
+    asc_nrm = stk_nrm[4, ...]
+    stk_nrm = np.delete(stk_nrm, obj=4, axis=0)
+    stk_nrm = np.concatenate((
+        stk_nrm, np.stack([
+            asc_nrm * (asc_msk  > 0),
+            asc_nrm * (asc_msk == 1),
+            asc_nrm * (asc_msk == 2),
+            ])), axis=0)
+    
+    # Get crops
+    ncl_crp = get_obj_crops(
+        stk_nrm, ncl_prp["y"], ncl_prp["x"], crop_size=crop_size)
+    
+    # Measure intensities
     for c, chn in enumerate(channels):
-        _obj_int = np.mean(crp[..., c], axis=(1, 2))
+        _ncl_int = np.mean(ncl_crp[..., c], axis=(1, 2))
         if normalize:
-            _obj_int /= np.mean(_obj_int) 
-        obj_int[f"{chn}_int"] = list(_obj_int)
-    return obj_int
+            _ncl_int /= np.mean(_ncl_int) 
+        ncl_int[f"{chn}_int"] = _ncl_int
+        
+    return ncl_int
+    
 
-#%% function(s) : get_asc_distances() -----------------------------------------
+#%% function(s) : asc distances -----------------------------------------------
+
+# def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
+            
+#     # Get edt
+#     asc_edt = distance_transform_edt(~asc_msk)
+    
+#     # Get asc distances
+#     asc_dst = asc_edt[(
+#         ncl_prp["y"].astype(int), 
+#         ncl_prp["x"].astype(int),
+#         )]
+    
+#     # Scale acc. to stk_level
+#     asc_dst *= 2 ** stk_level
+    
+#     return asc_dst
 
 def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
             
-    # Get edt
-    asc_edt = distance_transform_edt(~asc_msk)
+    def _get_asc_distances(msk):
+        asc_edt = distance_transform_edt(~msk)
+        asc_dst = asc_edt[(
+            ncl_prp["y"].astype(int), 
+            ncl_prp["x"].astype(int),
+            )]
+        asc_dst *= 2 ** stk_level
+        return asc_dst
     
-    # Get asc distances
-    asc_dst = asc_edt[(
-        np.array(ncl_prp["y"]).astype(int), 
-        np.array(ncl_prp["x"]).astype(int),
-        )]
+    # Initialize
+    asc_dst = {
+        "y" : ncl_prp["y"], 
+        "x" : ncl_prp["x"],
+        } 
     
-    # Scale acc. to stk_level
-    asc_dst *= 2 ** stk_level
+    # Run 
+    asc_dst["asc_all_dst"] = _get_asc_distances(asc_msk  > 0)
+    asc_dst["asc_spk_dst"] = _get_asc_distances(asc_msk == 1)
+    asc_dst["asc_nsp_dst"] = _get_asc_distances(asc_msk == 2)
     
     return asc_dst
 
-def bin_distances(
+def bin_asc_distances(
     dst, ncl_cls, ncl_classes,
     bin_size=10, bin_max=200, normalize=False, 
     ):
@@ -440,7 +461,8 @@ def bin_distances(
     # Execute -----------------------------------------------------------------
     
     # Initialize
-    ncl_cls = np.array(ncl_cls["class"])
+    dst = dst["dst"]
+    ncl_cls = ncl_cls["class"]
     
     # Define bins
     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
@@ -460,6 +482,11 @@ def bin_distances(
         for b, d in enumerate(bins):
             dst_bin[b] = dst_bin[b] / dst_bin_all
                 
+    # Convert to dataframe
+    dst_bin = pd.DataFrame(dst_bin)
+    dst_bin.columns = [clss + "_dst" for clss in ncl_classes]
+    dst_bin.insert(0, "bins", bins)
+            
     return dst_bin
 
 #%% function(s) : format data -------------------------------------------------
@@ -549,462 +576,7 @@ def get_class_avg(data, classes, vws_path):
 
     return avg, std, sem
 
-#%% 
-
-
-
 #%% function(s) : plot --------------------------------------------------------
-
-
-
-
-
-#%% function(s) : nuclei ------------------------------------------------------
-    
-# def get_nuclei_stats(ncl_crp, channels, vws_path):        
-#     ncl_sts = {"avg" : {}}
-#     for c, chn in enumerate(channels):
-#         ncl_sts["avg"][chn] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
-#     return ncl_sts
-
-def get_nuclei_intensities(ncl_crp, channels):        
-    ncl_int = {}
-    for c, chn in enumerate(channels):
-        ncl_int[f"{chn}_int"] = list(np.mean(ncl_crp[:, c, ...], axis=(1, 2)))
-    return ncl_int
-
-def get_nuclei_stats(ncl_crp, ncl_cls, vws_path, channels, classes):
-    
-    # Nested function(s) ------------------------------------------------------
-    
-    def get_nuclei_intensities(ncl_crp, channels, vws_path):        
-        ncl_int = {}
-        for c, chn in enumerate(channels):
-            ncl_int[f"{chn}_int"] = np.mean(ncl_crp[:, c, ...], axis=(1, 2))
-        return ncl_int
-    
-    # def get_mean_norm(df):
-    #     dfn = df.copy()
-    #     idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
-    #     dfn[idx] = df[idx] / df[idx].mean()
-    #     idx = df.filter(regex='|'.join(["count"])).columns
-    #     dfn[idx] = df[idx] / df[idx].sum()
-    #     return dfn
-    
-    # def get_class_avg(df):
-    #     dfa = df.copy()
-    #     dfa = df.groupby("class").mean(numeric_only=True)
-    #     dfa = dfa.drop(columns=["idx"])
-    #     dfa.insert(loc=0, column="count", value=df.groupby("class").size())
-    #     dfa = dfa.reset_index()
-    #     dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
-    #     return dfa
-    
-    # Execute -----------------------------------------------------------------
-    
-    # 
-    ncl_sts = {"view" : [vws_path.name] * ncl_crp.shape[0]}
-    
-    # Get nuclei intensities
-    ncl_sts.update(get_nuclei_intensities(ncl_crp, channels, vws_path))
-    
-    # Add view, class & entropy 
-    ncl_sts["class"  ] = ncl_cls["class"  ]
-    ncl_sts["entropy"] = ncl_cls["entropy"]
-    
-    ncl_sts = pd.DataFrame(ncl_sts)
-    
-    # # Extrat data
-    # ncl_df = pd.DataFrame()
-    # n_nuclei = len(ncl_cls["y"])
-    # n_classes = len(classes)
-    # ncl_df["view"   ] = [vws_path.name] * n_nuclei
-    # ncl_df["idx"    ] = np.arange(n_nuclei)
-    # ncl_df["class"  ] = np.array(classes)[ncl_prd]
-    # ncl_df["entropy"] = ncl_ent
-    # for msr in ["avg"]:
-    #     for chn in channels:
-    #         key = f"{chn}_{msr}"
-    #         ncl_df[key] = ncl_sts[msr][chn]
-    # ncl_dfa  = class_avg(ncl_df)
-    # ncl_dfn  = mean_norm(ncl_df)
-    # ncl_dfan = mean_norm(ncl_dfa)
-        
-    return ncl_sts
-
-# def format_nuclei_stats(
-#     ncl_prd, ncl_ent, ncl_sts, vws_path, 
-#     channels, classes
-#     ):
-    
-#     def mean_norm(df):
-#         dfn = df.copy()
-#         idx = df.filter(regex='|'.join(["entropy", "avg"])).columns
-#         dfn[idx] = df[idx] / df[idx].mean()
-#         idx = df.filter(regex='|'.join(["count"])).columns
-#         dfn[idx] = df[idx] / df[idx].sum()
-#         return dfn
-    
-#     def class_avg(df):
-#         dfa = df.copy()
-#         dfa = df.groupby("class").mean(numeric_only=True)
-#         dfa = dfa.drop(columns=["idx"])
-#         dfa.insert(loc=0, column="count", value=df.groupby("class").size())
-#         dfa = dfa.reset_index()
-#         dfa.insert(loc=0, column="view", value=[vws_path.name] * n_classes)
-#         return dfa
-    
-#     # Extrat data
-#     ncl_df = pd.DataFrame()
-#     n_nuclei = ncl_prd.shape[0]
-#     n_classes = len(classes)
-#     ncl_df["view"   ] = [vws_path.name] * n_nuclei
-#     ncl_df["idx"    ] = np.arange(n_nuclei)
-#     ncl_df["class"  ] = np.array(classes)[ncl_prd]
-#     ncl_df["entropy"] = ncl_ent
-#     for msr in ["avg"]:
-#         for chn in channels:
-#             key = f"{chn}_{msr}"
-#             ncl_df[key] = ncl_sts[msr][chn]
-#     ncl_dfa  = class_avg(ncl_df)
-#     ncl_dfn  = mean_norm(ncl_df)
-#     ncl_dfan = mean_norm(ncl_dfa)
-        
-#     return ncl_df, ncl_dfa, ncl_dfn, ncl_dfan
-
-#%% function(s) : asc ---------------------------------------------------------
-
-# def get_asc_stats(
-#         pvw_msk, ncl_ctd, asc_msk,
-#         pvw_level=4, stk_level=1
-#         ):
-    
-#     # Init.
-#     asc_sts = {}
-#     pvw_factor = (2 ** pvw_level) ** 2
-#     asc_factor = (2 ** stk_level) ** 2
-    
-#     # Areas
-#     all_area = np.sum(pvw_msk > 0) * pvw_factor
-#     asc_area = np.sum(asc_msk > 0) * asc_factor
-#     asc_area_nrm = asc_area / all_area
-    
-#     # Counts
-#     ncl_num = len(ncl_ctd["y"][0])
-#     asc_num = np.max(label(asc_msk > 0))
-#     asc_spk_num = np.max(label(asc_msk > 200))
-#     asc_num_ratio = asc_num / ncl_num
-#     asc_spk_num_ratio = asc_spk_num / ncl_num
-            
-#     # Append
-#     asc_sts["all_area"         ] = all_area
-#     asc_sts["asc_area"         ] = asc_area
-#     asc_sts["asc_area_ratio"   ] = asc_area_nrm
-#     asc_sts["ncl_num"          ] = ncl_num
-#     asc_sts["asc_num"          ] = asc_num
-#     asc_sts["asc_spk_num"      ] = asc_spk_num
-#     asc_sts["asc_num_ratio"    ] = asc_num_ratio
-#     asc_sts["asc_spk_num_ratio"] = asc_spk_num_ratio
-    
-#     return asc_sts
-
-def get_asc_stats(
-    pvw_msk, ncl_prp, asc_prp, asc_cls,
-    vws_path, pvw_level=4, stk_level=1, 
-    ):
-    
-    # Init.
-    asc_sts = {}
-    pvw_factor = (2 ** pvw_level) ** 2
-    asc_factor = (2 ** stk_level) ** 2
-        
-    # Areas
-    all_area = np.sum(pvw_msk > 0) * pvw_factor
-    asc_area = np.sum(asc_prp["area"]) * asc_factor
-    asc_area_ratio = asc_area / all_area
-    
-    # Counts
-    ncl_num = len(ncl_prp["y"])
-    asc_num = len(asc_prp["y"])
-    spk_num = (asc_cls["class"] == 0).sum()
-    asc_num_ratio = asc_num / ncl_num
-    spk_num_ratio = spk_num / ncl_num
-            
-    # Append
-    asc_sts["all_area"       ] = all_area
-    asc_sts["asc_area"       ] = asc_area
-    asc_sts["asc_area_ratio" ] = asc_area_ratio
-    asc_sts["ncl_num"        ] = ncl_num
-    asc_sts["asc_num"        ] = asc_num
-    asc_sts["spk_num"        ] = spk_num
-    asc_sts["asc_num_ratio"  ] = asc_num_ratio
-    asc_sts["spk_num_ratio"  ] = spk_num_ratio
-    
-    # Format
-    asc_sts = pd.DataFrame([asc_sts])
-    asc_sts.insert(0, "view", vws_path.name)
-    
-    return asc_sts
-
-def format_asc_stats(asc_sts, vws_path):
-    asc_sts_df = pd.DataFrame([asc_sts])
-    asc_sts_df.insert(0, "view", vws_path.name)
-    return asc_sts_df
-
-# def get_asc_distances(asc_msk, ncl_prp, classes, stk_level=1):
-            
-#     # Get edt
-#     asc_edt = distance_transform_edt(~asc_msk)
-    
-#     # Get asc distances
-#     asc_dst = asc_edt[(
-#         np.array(ncl_prp["y"]).astype(int), 
-#         np.array(ncl_prp["x"]).astype(int),
-#         )]
-    
-#     # Scale acc. to stk_level
-#     asc_dst *= 2 ** stk_level
-    
-    # return asc_dst
-
-def format_asc_distances(
-    asc_dst, ncl_prd, classes, bin_size=10, bin_max=200, stk_level=1):
-    
-    def get_counts(ncl_prd, normalized=False):
-        counts = np.bincount(ncl_prd, minlength=len(classes)).astype("float32")
-        total = counts.sum()
-        if normalized and total > 0:
-            return counts / total
-        return counts
-    
-    # Get bins
-    bins = np.arange(bin_size, bin_max + bin_size, bin_size)
-    
-    # Count nuclei class
-    counts_raw = []
-    counts_all_raw = np.stack(get_counts(ncl_prd, normalized=True))
-    for d, dst in enumerate(bins):
-        dst0 = 0 if d == 0 else bins[d - 1]
-        ncl_prd_dst = ncl_prd[(asc_dst >= dst0) & (asc_dst < dst)]
-        counts_raw.append(get_counts(ncl_prd_dst, normalized=True))
-        
-    # Normalizations (enrichment)
-    counts_nrm = []
-    for d, dst in enumerate(bins):
-        counts_nrm.append(counts_raw[d] / counts_all_raw)
-    
-    # Get dataframe
-    asc_dst_df = pd.DataFrame(counts_raw, columns=classes)
-    asc_dst_df.insert(0, "distances", bins)
-    asc_dst_dfn = pd.DataFrame(counts_nrm, columns=classes)
-    asc_dst_dfn.insert(0, "distances", bins)
-    
-    return asc_dst_df, asc_dst_dfn
-
-#%% function(s) : plots -------------------------------------------------------
-
-def plot(
-    ncl_df, ncl_dfa, ncl_dfn, ncl_dfan, asc_dst_df, asc_dst_dfn,
-    asc_bin_size, asc_bin_max, 
-    channels, classes, colors
-    ):
-    
-    # Inputs ------------------------------------------------------------------
-    
-    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
-    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-    merged = ncl_df["view"].nunique(dropna=False) > 1
-    
-    hline_params = {
-        "y" : 1, "color" : "0.75", "zorder" : 0,
-        "linewidth" : 1, "linestyle" : ":",
-        }
-    
-    grid_params = {
-        "axis" : "x", "color" : "0.75", "zorder" : 0,
-        "linewidth" : 1, "linestyle" : ":", 
-        }
-    
-    # Nested function(s) ------------------------------------------------------
-        
-    def _ylim(ax, min_ymax=6):
-        _, ymax = ax.get_ylim()
-        ax.set_ylim(0, np.maximum(min_ymax, ymax))
-        
-    def _boxplot(ax, vals, x, color, merged=False):
-        ax.boxplot(
-            vals, positions=[x], widths=0.5, patch_artist=True,
-            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
-            medianprops=dict(color=color, linewidth=2),
-            whiskerprops=dict(color="0.5", linewidth=1),
-            capprops=dict(color="0.5", linewidth=1),
-            showfliers=False,
-            )
-        ax.axhline(**hline_params)
-        ax.grid(**grid_params)
-        
-    def _barplot(ax, avg, x, color, err=None):
-        ax.bar(x, avg, width=0.5, capsize=5, color=color, zorder=2)
-        if not err is None:
-            ax.errorbar(
-                x, avg, yerr=np.vstack([err, err]),
-                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
-                )
-        ax.axhline(**hline_params)
-        ax.grid(**grid_params)
-
-    def _lineplot(ax, vals, x, color, label):
-        ax.plot(x, vals, color=color, label=label)
-        ax.grid(**grid_params)
-    
-    # Execute -----------------------------------------------------------------
-    
-    plt.ioff()
-    
-    # Initialize plot
-    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
-    axes = axes.flatten()
-    
-    # Main title/info ---------------------------------------------------------
-       
-    # Main title    
-    fig.suptitle(
-        "Merged views" if merged else ncl_dfa["view"].iloc[0],
-        fontsize=16, fontweight="bold", color="k",
-        y=0.92, x=0.025, ha="left",
-        )
-
-    # Secondary text
-    text = (
-        f"n views = {ncl_dfa['view'].nunique()} | "
-        f"n nuclei = {ncl_dfa['count'].sum():,} | "
-        f"avg. entropy = {ncl_dfa['entropy'].mean():.3f}"
-        )
-    fig.text(
-        0.025, 0.89, text,
-        fontsize=12, color="0.5",
-        ha="left", va="top",
-        )
-    
-    # (0) Class predictions frequency -----------------------------------------
-    
-    ax = axes[0]
-    dfs = ncl_dfan
-    
-    avg, std, sem = [], [], []
-    for cl, cla in enumerate(classes):
-        avg.append(dfs[dfs["class"] == cla]["count"].mean())
-        std.append(dfs[dfs["class"] == cla]["count"].std())
-        sem.append(dfs[dfs["class"] == cla]["count"].sem())
-    if merged:
-        _barplot(ax, avg, sclasses, colors, err=sem)
-    else:
-        _barplot(ax, avg, sclasses, colors, err=None)
-    
-    # Legend
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Frequency")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    ax.set_title("Class frequency", pad=10)
-    
-    # (1) Class predictions entropy -------------------------------------------
-    
-    ax = axes[1]
-    dfs = ncl_df
-    
-    for cl, cla in enumerate(classes):
-        vals = np.array(dfs[dfs["class"] == cla]["entropy"])
-        _boxplot(ax, vals, cl, colors[cl], merged=merged)
-        
-    # Legend
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Entropy")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    ax.set_title("Class pred. entropy", pad=10)
-    
-    # (2) ??? -----------------------------------------------------------------
-    
-    ax = axes[2]
-    ax.axis("off")
-    ax.set_facecolor("none")
-    
-    # (3 - 8) Channel intensities ---------------------------------------------
-    
-    for cl, cla in enumerate(classes):
-
-        ax = axes[cl + 3]                   
-        dfs = ncl_dfan if merged else ncl_dfn
-        
-        for ch, chn in enumerate(schannels):
-            vals = np.array(dfs[dfs["class"] == cla][f"{chn}_avg"])
-            _boxplot(ax, vals, ch, colors[cl], merged=merged)
-                    
-        # Legend
-        _ylim(ax)
-        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-        ax.set_xticklabels(schannels, rotation=45, ha="center")
-        ax.set_title(cla, pad=10)
-    
-    # (9) Class ASC intensities -----------------------------------------------
-    
-    ax = axes[9]
-    dfs = ncl_dfan if merged else ncl_dfn
-    
-    avg, std, sem = [], [], []
-    for cl, cla in enumerate(classes):
-        avg.append(dfs[dfs["class"] == cla]["ASC_avg"].mean())
-        std.append(dfs[dfs["class"] == cla]["ASC_avg"].std())
-        sem.append(dfs[dfs["class"] == cla]["ASC_avg"].sem())
-    _barplot(ax, avg, sclasses, colors, err=sem)
-        
-    # Legend
-    _ylim(ax)
-    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    ax.set_title("Class ASC int.", pad=10)
-        
-    # (10) ASC distance class frequency ---------------------------------------
-    
-    ax = axes[10]
-    dfs = asc_dst_df
-    
-    for cl, cla in enumerate(classes):
-        vals = dfs[cla]
-        dsts = dfs["distances"]
-        _lineplot(ax, vals, dsts, colors[cl], cla)
-        
-    # Legend
-    ax.set_ylabel("Frequency")
-    ax.set_xlabel("ASC cluster dist. (pixels)")
-    ax.set_xticks(dsts)
-    ax.set_title("ASC dist. class freq.", pad=10)
-    
-    # (11) ASC distance class enrichment --------------------------------------
-       
-    ax = axes[11]
-    dfs = asc_dst_dfn
-    
-    for cl, cla in enumerate(classes):
-        vals = dfs[cla]
-        dsts = dfs["distances"]
-        _lineplot(ax, vals, dsts, colors[cl], cla)
-        
-    # Legend
-    ax.set_ylabel("Fold change")
-    ax.set_xlabel("ASC cluster dist. (pixels)")
-    ax.set_xticks(dsts)
-    ax.set_title("ASC dist. class enrichment", pad=10)
-    
-    # -------------------------------------------------------------------------
-    
-    plt.tight_layout(rect=[0, 0, 1, 0.9])
-    plt.close(fig) 
-    plt.ion()
-
-    return fig
 
 #%% function(s) : pad_images() ------------------------------------------------
 
