@@ -351,15 +351,6 @@ def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
     
 #%% function(s) : get_ncl_intensities() ---------------------------------------
 
-# def get_obj_intensities(crp, channels, normalize=True):
-#     obj_int = {}
-#     for c, chn in enumerate(channels):
-#         _obj_int = np.mean(crp[..., c], axis=(1, 2))
-#         if normalize:
-#             _obj_int /= np.mean(_obj_int) 
-#         obj_int[f"{chn}_int"] = _obj_int
-#     return obj_int
-
 def get_ncl_intensities(
         stk_nrm, ncl_prp, asc_prp, asc_msk, channels, 
         crop_size=32, normalize=True,
@@ -375,7 +366,7 @@ def get_ncl_intensities(
     channels = channels.copy()
     if "ASC" in channels:
         channels.remove("ASC")
-    channels.extend(["ASC_all", "ASC_spk", "ASC_nsp"])
+    channels.extend(["asc_all", "asc_spk", "asc_nsp"])
     
     # Process ASC channel
     asc_nrm = stk_nrm[4, ...]
@@ -399,103 +390,86 @@ def get_ncl_intensities(
         ncl_int[f"{chn}_int"] = _ncl_int
         
     return ncl_int
-    
 
-#%% function(s) : asc distances -----------------------------------------------
+#%% function(s) : nuclei distances (to asc) ---------------------------------------
 
-# def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
+def get_ncl_distances(asc_msk, ncl_prp, stk_level=1):
             
-#     # Get edt
-#     asc_edt = distance_transform_edt(~asc_msk)
-    
-#     # Get asc distances
-#     asc_dst = asc_edt[(
-#         ncl_prp["y"].astype(int), 
-#         ncl_prp["x"].astype(int),
-#         )]
-    
-#     # Scale acc. to stk_level
-#     asc_dst *= 2 ** stk_level
-    
-#     return asc_dst
-
-def get_asc_distances(asc_msk, ncl_prp, stk_level=1):
-            
-    def _get_asc_distances(msk):
+    def _get_ncl_distances(msk):
         asc_edt = distance_transform_edt(~msk)
-        asc_dst = asc_edt[(
+        ncl_dst = asc_edt[(
             ncl_prp["y"].astype(int), 
             ncl_prp["x"].astype(int),
             )]
-        asc_dst *= 2 ** stk_level
-        return asc_dst
+        ncl_dst *= 2 ** stk_level
+        return ncl_dst.astype("float32")
     
     # Initialize
-    asc_dst = {
+    ncl_dst = {
         "y" : ncl_prp["y"], 
         "x" : ncl_prp["x"],
         } 
     
     # Run 
-    asc_dst["asc_all_dst"] = _get_asc_distances(asc_msk  > 0)
-    asc_dst["asc_spk_dst"] = _get_asc_distances(asc_msk == 1)
-    asc_dst["asc_nsp_dst"] = _get_asc_distances(asc_msk == 2)
+    ncl_dst["asc_all_dst"] = _get_ncl_distances(asc_msk  > 0)
+    ncl_dst["asc_spk_dst"] = _get_ncl_distances(asc_msk == 1)
+    ncl_dst["asc_nsp_dst"] = _get_ncl_distances(asc_msk == 2)
     
-    return asc_dst
+    return ncl_dst
 
-def bin_asc_distances(
-    dst, ncl_cls, ncl_classes,
-    bin_size=10, bin_max=200, normalize=False, 
-    ):
+# def bin_ncl_distances(
+#     ncl_dst, ncl_cls, ncl_classes,
+#     bin_size=10, bin_max=200, normalize=False, 
+#     ):
     
-    # Nested function(s) ------------------------------------------------------
+#     # Nested function(s) ------------------------------------------------------
     
-    def get_counts(ncl_cls, ncl_classes, normalized=False):
-        counts = np.bincount(
-            ncl_cls, minlength=len(ncl_classes)).astype("float32")
-        total = counts.sum()
-        if normalized and total > 0:
-            return counts / total
-        return counts
+#     def get_counts(ncl_cls, ncl_classes, normalized=False):
+#         counts = np.bincount(
+#             ncl_cls, minlength=len(ncl_classes)).astype("float32")
+#         total = counts.sum()
+#         if normalized and total > 0:
+#             return counts / total
+#         return counts
         
-    # Execute -----------------------------------------------------------------
+#     # Execute -----------------------------------------------------------------
     
-    # Initialize
-    dst = dst["dst"]
-    ncl_cls = ncl_cls["class"]
+#     # Initialize
+#     ncl_dst = ncl_dst["dst"]
+#     ncl_cls = ncl_cls["class"]
     
-    # Define bins
-    bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+#     # Define bins
+#     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
     
-    # Get binned distances
-    dst_bin = []
-    for b, d in enumerate(bins):
-        d0 = 0 if b == 0 else bins[b - 1]
-        dst_bin_cls = ncl_cls[(dst >= d0) & (dst < d)]
-        dst_bin.append(get_counts(
-            dst_bin_cls, ncl_classes, normalized=True))
+#     # Get binned distances
+#     dst_bin = []
+#     for b, d in enumerate(bins):
+#         d0 = 0 if b == 0 else bins[b - 1]
+#         dst_bin_cls = ncl_cls[(dst >= d0) & (dst < d)]
+#         dst_bin.append(get_counts(
+#             dst_bin_cls, ncl_classes, normalized=True))
     
-    # Normalization (enrichment)
-    if normalize:
-        dst_bin_all = np.stack(get_counts(
-            ncl_cls, ncl_classes, normalized=True))
-        for b, d in enumerate(bins):
-            dst_bin[b] = dst_bin[b] / dst_bin_all
+#     # Normalization (enrichment)
+#     if normalize:
+#         dst_bin_all = np.stack(get_counts(
+#             ncl_cls, ncl_classes, normalized=True))
+#         for b, d in enumerate(bins):
+#             dst_bin[b] = dst_bin[b] / dst_bin_all
                 
-    # Convert to dataframe
-    dst_bin = pd.DataFrame(dst_bin)
-    dst_bin.columns = [clss + "_dst" for clss in ncl_classes]
-    dst_bin.insert(0, "bins", bins)
+#     # Convert to dataframe
+#     dst_bin = pd.DataFrame(dst_bin)
+#     dst_bin.columns = [clss + "_dst" for clss in ncl_classes]
+#     dst_bin.insert(0, "bins", bins)
             
-    return dst_bin
+#     return dst_bin
 
-#%% function(s) : format data -------------------------------------------------
+#%% function(s) : format/avg. data --------------------------------------------
 
-def format_ncl_data(ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path):
+def format_ncl_data(ncl_prp, ncl_cls, ncl_int, ncl_dst, vws_path):
     
     n = len(ncl_prp["y"])
     ncl_int.pop("y") ; ncl_int.pop("x")
-    asc_dst.pop("y") ; asc_dst.pop("x")
+    ncl_dst.pop("y") ; ncl_dst.pop("x")
     ncl_data = {
         "view"         : [vws_path.name] * n,
         "y"            : ncl_prp["y"],
@@ -506,16 +480,15 @@ def format_ncl_data(ncl_prp, ncl_cls, ncl_int, asc_dst, vws_path):
         "entropy"      : ncl_cls["entropy"],
         }
     ncl_data.update(
-        {k: v for k, v in asc_dst.items() if k not in ("x", "y")})
-    ncl_data.update(
         {k: v for k, v in ncl_int.items() if k not in ("x", "y")})
+    ncl_data.update(
+        {k: v for k, v in ncl_dst.items() if k not in ("x", "y")})
     
     return pd.DataFrame(ncl_data)
 
-def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
+def format_asc_data(asc_prp, asc_cls, vws_path):
     
     n = len(asc_prp["y"])
-    asc_int.pop("y") ; asc_int.pop("x")
     asc_data = {
         "view"         : [vws_path.name] * n,
         "y"            : asc_prp["y"],
@@ -525,16 +498,14 @@ def format_asc_data(asc_prp, asc_cls, asc_int, vws_path):
         "class"        : asc_cls["class"],
         "entropy"      : asc_cls["entropy"],
         }
-    asc_data.update(
-        {k: v for k, v in asc_int.items() if k not in ("x", "y")})
     
     return pd.DataFrame(asc_data)
 
-#%% function(s) : get_class_avg() ---------------------------------------------
+def average_data(data, classes, vws_path):  
 
-def get_class_avg(data, classes, vws_path):  
+    # Nested function(s) ------------------------------------------------------        
 
-    def _get_class_avg(grp, method="mean"):
+    def _average_data(grp, method="mean"):
         
         # Statistics
         if method == "mean": df = grp.mean(numeric_only=True)
@@ -565,15 +536,29 @@ def get_class_avg(data, classes, vws_path):
         
         return df[cols + features]
 
+    # Execute -----------------------------------------------------------------
+
     # Group per class
-    grp = data.drop(columns=["x", "y"], errors="ignore")
-    grp = grp.groupby("class", sort=True)
+    dat = data.drop(columns=["x", "y"], errors="ignore")
+    grp = dat.groupby("class", sort=True)
         
     # Format
-    avg = _get_class_avg(grp, method="mean")
-    std = _get_class_avg(grp, method="std")
-    sem = _get_class_avg(grp, method="sem")
-
+    avg = _average_data(grp, method="mean")
+    std = _average_data(grp, method="std")
+    sem = _average_data(grp, method="sem")
+    
+    # Add "all" group (for asc)
+    if classes[0] == "Speckle":
+        classes = ["All"]
+        dat["class"] = 0
+        grp = dat.groupby("class", sort=True)
+        avg_ = _average_data(grp, method="mean")
+        std_ = _average_data(grp, method="std")
+        sem_ = _average_data(grp, method="sem")
+        avg = pd.concat([avg_, avg], ignore_index=True)
+        std = pd.concat([std_, avg], ignore_index=True)
+        sem = pd.concat([sem_, avg], ignore_index=True)
+        
     return avg, std, sem
 
 #%% function(s) : plot --------------------------------------------------------
