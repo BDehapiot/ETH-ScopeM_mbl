@@ -391,7 +391,7 @@ def get_ncl_intensities(
         
     return ncl_int
 
-#%% function(s) : nuclei distances (to asc) ---------------------------------------
+#%% function(s) : nuclei distances (to asc) -----------------------------------
 
 def get_ncl_distances(asc_msk, ncl_prp, stk_level=1):
             
@@ -417,51 +417,80 @@ def get_ncl_distances(asc_msk, ncl_prp, stk_level=1):
     
     return ncl_dst
 
-# def bin_ncl_distances(
-#     ncl_dst, ncl_cls, ncl_classes,
-#     bin_size=10, bin_max=200, normalize=False, 
-#     ):
+def bin_ncl_distances(
+    ncl_dst, ncl_cls, ncl_classes,
+    bin_size=8, bin_max=64, normalize=False, 
+    ):
     
-#     # Nested function(s) ------------------------------------------------------
+    # Nested function(s) ------------------------------------------------------
     
-#     def get_counts(ncl_cls, ncl_classes, normalized=False):
-#         counts = np.bincount(
-#             ncl_cls, minlength=len(ncl_classes)).astype("float32")
-#         total = counts.sum()
-#         if normalized and total > 0:
-#             return counts / total
-#         return counts
+    def get_counts(ncl_cls, ncl_classes, normalized=False):
+        counts = np.bincount(
+            ncl_cls, minlength=len(ncl_classes)).astype("float32")
+        total = counts.sum()
+        if normalized and total > 0:
+            return counts / total
+        return counts
         
-#     # Execute -----------------------------------------------------------------
+    # Execute -----------------------------------------------------------------
     
-#     # Initialize
-#     ncl_dst = ncl_dst["dst"]
-#     ncl_cls = ncl_cls["class"]
-    
-#     # Define bins
-#     bins = np.arange(bin_size, bin_max + bin_size, bin_size)
-    
-#     # Get binned distances
-#     dst_bin = []
-#     for b, d in enumerate(bins):
-#         d0 = 0 if b == 0 else bins[b - 1]
-#         dst_bin_cls = ncl_cls[(dst >= d0) & (dst < d)]
-#         dst_bin.append(get_counts(
-#             dst_bin_cls, ncl_classes, normalized=True))
-    
-#     # Normalization (enrichment)
-#     if normalize:
-#         dst_bin_all = np.stack(get_counts(
-#             ncl_cls, ncl_classes, normalized=True))
-#         for b, d in enumerate(bins):
-#             dst_bin[b] = dst_bin[b] / dst_bin_all
-                
-#     # Convert to dataframe
-#     dst_bin = pd.DataFrame(dst_bin)
-#     dst_bin.columns = [clss + "_dst" for clss in ncl_classes]
-#     dst_bin.insert(0, "bins", bins)
+    ncl_dst_bin = {}
+    ncl_cls = ncl_cls["class"]
+    for tag in ["all", "spk", "nsp"]:
+        
+        dst = ncl_dst[f"asc_{tag}_dst"]
+        
+        # Define bins
+        bins = np.arange(bin_size, bin_max + bin_size, bin_size)
+        
+        # Get binned distances
+        dst_bin = []
+        for b, d in enumerate(bins):
+            d0 = 0 if b == 0 else bins[b - 1]
+            dst_bin_cls = ncl_cls[(dst >= d0) & (dst < d)]
+            dst_bin.append(get_counts(
+                dst_bin_cls, ncl_classes, normalized=True))
+        
+        # Normalization (enrichment)
+        if normalize:
+            dst_bin_all = np.stack(get_counts(
+                ncl_cls, ncl_classes, normalized=True))
+            for b, d in enumerate(bins):
+                dst_bin[b] = dst_bin[b] / dst_bin_all
+                    
+        # Convert to dataframe
+        dst_bin = pd.DataFrame(dst_bin)
+        dst_bin.columns = [clss + f"_asc_{tag}_dst" for clss in ncl_classes]
+        dst_bin.insert(0, "bins", bins)
+        
+        # Append
+        ncl_dst_bin[f"asc_{tag}_dst"] = dst_bin
             
-#     return dst_bin
+    return ncl_dst_bin
+
+def average_ncl_distances_bin(ncl_dst_bin_mrg):
+
+    def concatenate(dst_bin) :
+        dst_bin = pd.concat(dst_bin, axis=1)
+        dst_bin = dst_bin.loc[:, ~dst_bin.columns.duplicated(keep="first")]
+        return dst_bin
+
+    dst_bin_avg, dst_bin_std, dst_bin_sem = [], [], []
+    for tag in ["all", "spk", "nsp"]:
+        dst_bin_cct = [
+            dst_bin[f"asc_{tag}_dst"] 
+            for dst_bin in ncl_dst_bin_mrg
+            ]       
+        dst_bin_cct = pd.concat(dst_bin_cct)
+        dst_bin_avg.append(dst_bin_cct.groupby(level=0, sort=False).mean())
+        dst_bin_std.append(dst_bin_cct.groupby(level=0, sort=False).std())
+        dst_bin_sem.append(dst_bin_cct.groupby(level=0, sort=False).sem())
+    
+    dst_bin_avg = concatenate(dst_bin_avg)
+    dst_bin_std = concatenate(dst_bin_std)
+    dst_bin_sem = concatenate(dst_bin_sem)
+    
+    return dst_bin_avg, dst_bin_std, dst_bin_sem
 
 #%% function(s) : format/avg. data --------------------------------------------
 
@@ -548,7 +577,7 @@ def average_data(data, classes, vws_path):
     sem = _average_data(grp, method="sem")
     
     # Add "all" group (for asc)
-    if classes[0] == "Speckle":
+    if classes[0] == "Speckle" and "y" in data.columns:
         classes = ["All"]
         dat["class"] = 0
         grp = dat.groupby("class", sort=True)
