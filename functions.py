@@ -50,7 +50,7 @@ def load_compressed_stack(path):
     with np.load(path) as loader:
         return loader["data"]
 
-#%% function(s) : normalization -----------------------------------------------
+#%% function(s) : normalization & scaling -------------------------------------
 
 def norm_12_to_8bits(arr):
     if arr.ndim == 2:
@@ -94,6 +94,10 @@ def norm_data(arr, pvw_sts, channel=None):
             arr[c] = norm_pct(arr[c], sample_fraction=0.1)
     
     return arr
+
+def get_sfactor(lvl_in, lvl_out, ndim=1, pixel_size=None):
+    if pixel_size is None: pixel_size = 1.0
+    return ((2 ** (lvl_in - lvl_out)) * pixel_size) ** ndim
 
 #%% function(s) : get_slide_metadata() ----------------------------------------
         
@@ -282,8 +286,10 @@ def get_mask_from_coords(coords, labels=None, shape=(2048, 2048)):
 
 #%% function(s) : get_obj_properties() ----------------------------------------
 
-def get_obj_properties(nrm, msk):
+def get_obj_properties(nrm, msk, stk_level=1, pixel_size=0.5):
 
+    sfactor = get_sfactor(stk_level, 0, ndim=2, pixel_size=pixel_size)
+    
     props = regionprops_table(
         label(msk), intensity_image=nrm, 
         properties=(
@@ -297,7 +303,7 @@ def get_obj_properties(nrm, msk):
     return {
         "y"      : props["centroid-0"].astype("uint16"),  
         "x"      : props["centroid-1"].astype("uint16"),  
-        "area"   : props["area"].astype("uint16"), 
+        "area"   : (props["area"] * sfactor).astype("uint16") , 
         "coords" : [coord.astype("uint16") for coord in props["coords"]], 
         "eccentricity"   : props["eccentricity"].astype("float32"), 
         "intensity_max"  : props["intensity_max"].astype("float32"),  
@@ -353,7 +359,8 @@ def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
 
 def get_ncl_intensities(
         stk_nrm, ncl_prp, asc_prp, asc_msk, channels, 
-        crop_size=32, normalize=True,
+        crop_size=32, normalize=True, 
+        stk_level=1, pixel_size=0.5
         ):
             
     # Initialize
@@ -379,8 +386,11 @@ def get_ncl_intensities(
             ])), axis=0)
     
     # Get crops
+    sfactor = get_sfactor(0, stk_level, ndim=1, pixel_size=pixel_size)
     ncl_crp = get_obj_crops(
-        stk_nrm, ncl_prp["y"], ncl_prp["x"], crop_size=crop_size)
+        stk_nrm, ncl_prp["y"], ncl_prp["x"], 
+        crop_size=int(crop_size * sfactor)
+        )
     
     # Measure intensities
     for c, chn in enumerate(channels):
@@ -393,15 +403,14 @@ def get_ncl_intensities(
 
 #%% function(s) : nuclei distances (to asc) -----------------------------------
 
-def get_ncl_distances(asc_msk, ncl_prp, stk_level=1):
+def get_ncl_distances(asc_msk, ncl_prp, stk_level=1, pixel_size=0.5):
             
-    def _get_ncl_distances(msk):
+    def _get_ncl_distances(msk, sfactor):
         asc_edt = distance_transform_edt(~msk)
         ncl_dst = asc_edt[(
             ncl_prp["y"].astype(int), 
             ncl_prp["x"].astype(int),
             )]
-        ncl_dst *= 2 ** stk_level
         return ncl_dst.astype("float32")
     
     # Initialize
@@ -411,15 +420,17 @@ def get_ncl_distances(asc_msk, ncl_prp, stk_level=1):
         } 
     
     # Run 
-    ncl_dst["asc_all_dst"] = _get_ncl_distances(asc_msk  > 0)
-    ncl_dst["asc_spk_dst"] = _get_ncl_distances(asc_msk == 1)
-    ncl_dst["asc_nsp_dst"] = _get_ncl_distances(asc_msk == 2)
+    sfactor = get_sfactor(stk_level, 0, ndim=1, pixel_size=pixel_size)
+    ncl_dst["asc_all_dst"] = _get_ncl_distances(asc_msk  > 0, sfactor)
+    ncl_dst["asc_spk_dst"] = _get_ncl_distances(asc_msk == 1, sfactor)
+    ncl_dst["asc_nsp_dst"] = _get_ncl_distances(asc_msk == 2, sfactor)
     
     return ncl_dst
 
 def bin_ncl_distances(
     ncl_dst, ncl_cls, ncl_classes,
-    bin_size=8, bin_max=64, normalize=False, 
+    bin_size=4, bin_max=32, normalize=False, 
+    stk_level=1, pixel_size=0.5,
     ):
     
     # Nested function(s) ------------------------------------------------------
@@ -438,6 +449,7 @@ def bin_ncl_distances(
     ncl_cls = ncl_cls["class"]
     for tag in ["all", "spk", "nsp"]:
         
+        # Rescale
         dst = ncl_dst[f"asc_{tag}_dst"]
         
         # Define bins
@@ -492,6 +504,60 @@ def average_ncl_distances_bin(ncl_dst_bin_mrg):
     
     return dst_bin_avg, dst_bin_std, dst_bin_sem
 
+#%% function(s) : get_asc_stats() ---------------------------------------------
+    
+def get_asc_stats(
+    pvw_msk, ncl_prp, asc_prp, asc_cls, vws_path,
+    pvw_level=4, pixel_size=0.5,
+    ): 
+
+    # Init.
+    asc_sts = {}
+    spk_idx = np.where(asc_cls["class"] == 0)[0]
+    nsp_idx = np.where(asc_cls["class"] == 1)[0]
+    sfactor = get_sfactor(pvw_level, 0, ndim=2, pixel_size=pixel_size)
+        
+    # Areas
+    tissue_area = np.sum(pvw_msk > 0) * sfactor
+    asc_all_area = np.sum(asc_prp["area"])
+    asc_spk_area = np.sum(asc_prp["area"][spk_idx])
+    asc_nsp_area = np.sum(asc_prp["area"][nsp_idx])
+    asc_all_area_ratio = asc_all_area / tissue_area
+    asc_spk_area_ratio = asc_spk_area / tissue_area  
+    asc_nsp_area_ratio = asc_nsp_area / tissue_area  
+    
+    # Counts
+    ncl_num = len(ncl_prp["y"])
+    asc_all_num = len(asc_prp["y"])        
+    asc_spk_num = (asc_cls["class"] == 0).sum()
+    asc_nsp_num = (asc_cls["class"] == 1).sum()
+    asc_all_num_ratio = asc_all_num / ncl_num
+    asc_spk_num_ratio = asc_spk_num / ncl_num
+    asc_nsp_num_ratio = asc_nsp_num / ncl_num
+  
+    # Append
+    asc_sts["tissue_area"       ] = tissue_area
+    asc_sts["asc_all_area"      ] = asc_all_area
+    asc_sts["asc_all_area_ratio"] = asc_all_area_ratio
+    asc_sts["asc_spk_area"      ] = asc_spk_area
+    asc_sts["asc_spk_area_ratio"] = asc_spk_area_ratio
+    asc_sts["asc_nsp_area"      ] = asc_nsp_area
+    asc_sts["asc_nsp_area_ratio"] = asc_nsp_area_ratio
+    
+    asc_sts["ncl_num"           ] = ncl_num
+    asc_sts["asc_all_num"       ] = asc_all_num
+    asc_sts["asc_spk_num"       ] = asc_spk_num
+    asc_sts["asc_nsp_num"       ] = asc_nsp_num
+    asc_sts["asc_all_num_ratio" ] = asc_all_num_ratio
+    asc_sts["asc_spk_num_ratio" ] = asc_spk_num_ratio
+    asc_sts["asc_nsp_num_ratio" ] = asc_nsp_num_ratio
+    
+    # Format
+    asc_sts = pd.DataFrame([asc_sts])
+    asc_sts.insert(0, "view", vws_path.name)
+    
+    return asc_sts
+
 #%% function(s) : format/avg. data --------------------------------------------
 
 def format_ncl_data(ncl_prp, ncl_cls, ncl_int, ncl_dst, vws_path):
@@ -503,7 +569,7 @@ def format_ncl_data(ncl_prp, ncl_cls, ncl_int, ncl_dst, vws_path):
         "view"         : [vws_path.name] * n,
         "y"            : ncl_prp["y"],
         "x"            : ncl_prp["x"],
-        "area"         : ncl_prp["area"],
+        "area"         : ncl_prp["area"] ,
         "eccentricity" : ncl_prp["eccentricity"],
         "class"        : ncl_cls["class"],
         "entropy"      : ncl_cls["entropy"],
