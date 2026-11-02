@@ -163,7 +163,7 @@ class AnnotateASC:
         self.cls_group_box = QGroupBox("Classify")
         self.cls_group_layout = QVBoxLayout()
         self.cls_add = QRadioButton("Speckle")
-        self.cls_rmv = QRadioButton("Normal")
+        self.cls_rmv = QRadioButton("Non-speckle")
         self.cls_add.setChecked(True)
         self.cls_group_layout.addWidget(self.cls_add)
         self.cls_group_layout.addWidget(self.cls_rmv)
@@ -261,8 +261,8 @@ class AnnotateASC:
 
         self.info.setText(
             f"{self.vws_paths[self.vws_idx].name}\n"
-            f"n Speckle = {n_add}\n"
-            f"n Normal  = {n_rmv}"
+            f"n Speckle     = {n_add}\n"
+            f"n Non-speckle = {n_rmv}"
             )
 
 #%% Execute -------------------------------------------------------------------

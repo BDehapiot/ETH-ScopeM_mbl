@@ -538,10 +538,10 @@ def get_asc_stats(
     # Append
     asc_sts["tissue_area"       ] = tissue_area
     asc_sts["asc_all_area"      ] = asc_all_area
-    asc_sts["asc_all_area_ratio"] = asc_all_area_ratio
     asc_sts["asc_spk_area"      ] = asc_spk_area
-    asc_sts["asc_spk_area_ratio"] = asc_spk_area_ratio
     asc_sts["asc_nsp_area"      ] = asc_nsp_area
+    asc_sts["asc_all_area_ratio"] = asc_all_area_ratio
+    asc_sts["asc_spk_area_ratio"] = asc_spk_area_ratio
     asc_sts["asc_nsp_area_ratio"] = asc_nsp_area_ratio
     
     asc_sts["ncl_num"           ] = ncl_num
