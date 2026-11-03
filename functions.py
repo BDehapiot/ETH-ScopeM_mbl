@@ -250,8 +250,8 @@ def get_obj_mask(
         ):
     
     # Initialize
-    rf = 1 / (2 ** (msk_level - prd_level))
-    min_size = min_size // ((2 ** msk_level) ** 2) 
+    rf = get_sfactor(prd_level, msk_level, ndim=1, pixel_size=None)
+    min_size = min_size * (rf ** 2) 
     
     # Rescale prediction (if required)
     if rf != 1: 

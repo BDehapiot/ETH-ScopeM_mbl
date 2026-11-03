@@ -68,7 +68,7 @@ model_parameters = {
     "epochs"             : 2048,
     "batch_size"         : 32,
     "validation_split"   : 0.2,
-    "learning_rate"      : 0.001,
+    "learning_rate"      : 0.0001,
     "patience"           : 512,
 
     # Augment -----------------------------------------------------------------

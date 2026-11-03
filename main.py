@@ -29,26 +29,34 @@ from scipy.stats import entropy
 
 #%% Comments ------------------------------------------------------------------
 
+"""
+
+- work on the asc_msk, and classification, maybe implementing filtering out
+small non-speckles.
+- !!! find a way to avoid main code execution while running display, annotate...
+
+"""
+
 #%% Inputs --------------------------------------------------------------------
 
 main_parameters = {
 
     # Procedure
     "force_extract"         : 1,
-    "force_predict_nuclei"  : 1,
-    "force_predict_asc"     : 1,
-    "force_classify_nuclei" : 1,
-    "force_classify_asc"    : 1,
-    "force_measure"         : 1,
+    "force_predict_nuclei"  : 2,
+    "force_predict_asc"     : 2,
+    "force_classify_nuclei" : 2,
+    "force_classify_asc"    : 2,
+    "force_measure"         : 2,
     "force_analyse"         : 0,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
     "model_pvw_name"        : "model-sm_preview_256_binary_227-1024",
     "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
-    "model_asc_name"        : "model-sm_asc_256_binary_307-1024",
+    "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
     "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
-    "model_asc_class_name"  : "model-cls_asc_12_2_2_958-8192b",
+    "model_asc_class_name"  : "model-cls_asc_12_2_2_2496-8192b",
     
     # extract()
     "pvw_level"             : 4,
