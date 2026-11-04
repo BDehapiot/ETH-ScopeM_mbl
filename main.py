@@ -44,9 +44,9 @@ main_parameters = {
     # Procedure
     "force_extract"         : 1,
     "force_predict_nuclei"  : 2,
-    "force_predict_asc"     : 2,
+    "force_predict_asc"     : 1,
     "force_classify_nuclei" : 2,
-    "force_classify_asc"    : 2,
+    "force_classify_asc"    : 1,
     "force_measure"         : 2,
     "force_analyse"         : 0,
     
@@ -66,13 +66,15 @@ main_parameters = {
     "ncl_level"             : 0,
     "ncl_thresh_0"          : 0.25,
     "ncl_thresh_1"          : 0.50,
-    "ncl_min_size"          : 8,
+    "ncl_min_size"          : 8,    # in µm² at level = 0
+    "ncl_max_size"          : 64,   # in µm² at level = 0
     
     # predict_asc()
     "asc_level"             : 0,
-    "asc_thresh_0"          : 0.25,
+    "asc_thresh_0"          : 0.1,
     "asc_thresh_1"          : None,
-    "asc_min_size"          : 8,   
+    "asc_min_size"          : 8,    # in µm² at level = 0
+    "asc_max_size"          : None, # in µm² at level = 0
     
     # Measure()
     "pixel_size"            : 0.5,  # in µm at level = 0
@@ -82,7 +84,7 @@ main_parameters = {
     # Analyse()
     "dst_bin_size"          : 4,    # in µm at level = 0
     "dst_bin_max"           : 32,   # in µm at level = 0
-    "dst_norm"              : True, # normalize distances
+    "dst_norm"              : True, # normalize distances (per class)
     
     # Maps  -------------------------------------------------------------------
     
@@ -117,23 +119,29 @@ class Main:
                 setattr(self, key, val)
                 
         # Run
-        self.extract()
-        self.predict_nuclei()
-        self.predict_asc()
-        self.classify_nuclei()
-        self.classify_asc()
-        self.measure()
-        self.analyse()
+        self.initialize()
+        if __name__ == "__main__":
+            self.extract()
+            self.predict_nuclei()
+            self.predict_asc()
+            self.classify_nuclei()
+            self.classify_asc()
+            self.measure()
+            self.analyse()
         
-#%% Class(Main) : extract() ---------------------------------------------------
+#%% Class(Main) : initialize() ------------------------------------------------
 
-    def extract(self):
+    def initialize(self):
+        
+        # Log
+        t0i = time.time()
+        log_str = "Main() : initialize()"
+        print("-" * len(log_str))
+        print(log_str)
+        print("-" * len(log_str))
         
         qpt_paths = list(self.data_path.glob("*unmixed.qptiff"))
-
-        self.qpt_paths = []
-        self.mtd_paths = []
-        self.vws_paths = []
+        self.qpt_paths, self.mtd_paths, self.vws_paths  = [], [], []
         for p, qpt_path in enumerate(qpt_paths): 
             
             # Metadata --------------------------------------------------------
@@ -161,6 +169,27 @@ class Main:
                 self.mtd_paths.append(mtd_path)
                 self.vws_paths.append(vws_path)
                 
+        t1f = time.time()
+        print(f"> {t1f - t0i:.3f}s")
+        
+#%% Class(Main) : extract() ---------------------------------------------------
+
+    def extract(self):
+        
+        for p, qpt_path in enumerate(self.qpt_paths): 
+
+            # Metadata
+            mtd_path = self.mtd_paths[p]
+            with open(mtd_path, "rb") as file:
+                mtd = pickle.load(file)
+                
+            # Data ------------------------------------------------------------
+                    
+            for roi_idx in range(len(mtd["roi"])):
+                
+                # Paths
+                vws_name = str(qpt_path.name).replace(".qptiff", f"_{roi_idx:02d}")
+                vws_path = self.data_path / vws_name                
                 pvw_raw_path = vws_path / "preview_raw.tif"
                 pvw_msk_path = vws_path / "preview_mask.tif"
                 pvw_nrm_path = vws_path / "preview_norm.tif"
@@ -258,6 +287,7 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
+            pvw_msk_path = vws_path / "preview_mask.tif"
             stk_nrm_path = vws_path / "stack_norm.tif"
             ncl_msk_path = vws_path / "nuclei_mask.tif"
             ncl_prp_path = vws_path / "nuclei_properties.pkl"
@@ -287,6 +317,7 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
+                pvw_msk = io.imread(pvw_msk_path)
                 ncl_nrm = load_view(
                     qpt_path, metadata=mtd, channels="DAPI", 
                     level=self.ncl_level, roi_idx=roi_idx,
@@ -309,13 +340,16 @@ class Main:
                 # Get mask ----------------------------------------------------
     
                 t0 = time.time()
-    
+                    
                 ncl_msk = get_obj_mask(
-                    ncl_prd, 
+                    ncl_prd, pvw_msk,
                     thresh_0=self.ncl_thresh_0, 
-                    thresh_1=self.ncl_thresh_1, 
+                    thresh_1=self.ncl_thresh_1,
                     min_size=self.ncl_min_size,
+                    max_size=self.ncl_max_size,
                     prd_level=self.ncl_level,
+                    msk_level=self.stk_level,
+                    pvw_level=self.pvw_level,
                     )
                 
                 t1 = time.time()
@@ -364,6 +398,7 @@ class Main:
             mtd_path = self.mtd_paths[p]
             qpt_path = self.qpt_paths[p]
             pvw_sts_path = vws_path / "preview_stats.pkl"
+            pvw_msk_path = vws_path / "preview_mask.tif"
             stk_nrm_path = vws_path / "stack_norm.tif"
             asc_msk_path = vws_path / "asc_mask.tif"
             asc_prp_path = vws_path / "asc_properties.pkl"
@@ -393,6 +428,7 @@ class Main:
                     mtd = pickle.load(file)
                 with open(pvw_sts_path, "rb") as file:
                     pvw_sts = pickle.load(file)
+                pvw_msk = io.imread(pvw_msk_path)
                 asc_nrm = load_view(
                     qpt_path, metadata=mtd, channels="ASC", 
                     level=self.asc_level, roi_idx=roi_idx,
@@ -417,13 +453,16 @@ class Main:
                 t0 = time.time()
     
                 asc_msk = get_obj_mask(
-                    asc_prd, 
+                    asc_prd, pvw_msk,
                     thresh_0=self.asc_thresh_0, 
                     thresh_1=self.asc_thresh_1,
                     min_size=self.asc_min_size,
+                    max_size=self.asc_max_size,
                     prd_level=self.asc_level,
+                    msk_level=self.stk_level,
+                    pvw_level=self.pvw_level,
                     )
-                    
+                
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - process")  
                 
@@ -996,21 +1035,21 @@ if __name__ == "__main__":
     # asc_data_std = main.asc_data_std
     # asc_data_sem = main.asc_data_sem
 
-    asc_sts_mrg = main.asc_sts_mrg
-    ncl_data_avg_mrg = main.ncl_data_avg_mrg
-    ncl_data_avg_avg = main.ncl_data_avg_avg
-    ncl_data_avg_std = main.ncl_data_avg_std
-    ncl_data_avg_sem = main.ncl_data_avg_sem
-    asc_data_avg_mrg = main.asc_data_avg_mrg
-    asc_data_avg_avg = main.asc_data_avg_avg
-    asc_data_avg_std = main.asc_data_avg_std
-    asc_data_avg_sem = main.asc_data_avg_sem
+    # asc_sts_mrg = main.asc_sts_mrg
+    # ncl_data_avg_mrg = main.ncl_data_avg_mrg
+    # ncl_data_avg_avg = main.ncl_data_avg_avg
+    # ncl_data_avg_std = main.ncl_data_avg_std
+    # ncl_data_avg_sem = main.ncl_data_avg_sem
+    # asc_data_avg_mrg = main.asc_data_avg_mrg
+    # asc_data_avg_avg = main.asc_data_avg_avg
+    # asc_data_avg_std = main.asc_data_avg_std
+    # asc_data_avg_sem = main.asc_data_avg_sem
     
-    ncl_dst_bin = main.ncl_dst_bin
-    ncl_dst_bin_mrg = main.ncl_dst_bin_mrg
-    ncl_dst_bin_avg = main.ncl_dst_bin_avg
-    ncl_dst_bin_std = main.ncl_dst_bin_std
-    ncl_dst_bin_sem = main.ncl_dst_bin_sem
+    # ncl_dst_bin = main.ncl_dst_bin
+    # ncl_dst_bin_mrg = main.ncl_dst_bin_mrg
+    # ncl_dst_bin_avg = main.ncl_dst_bin_avg
+    # ncl_dst_bin_std = main.ncl_dst_bin_std
+    # ncl_dst_bin_sem = main.ncl_dst_bin_sem
     
     # # Display
     # import napari
@@ -1148,224 +1187,224 @@ if __name__ == "__main__":
     
 #%%
 
-    import matplotlib.pyplot as plt
+    # import matplotlib.pyplot as plt
 
-    # -------------------------------------------------------------------------
+    # # -------------------------------------------------------------------------
 
-    ncl_all = ncl_data_avg_mrg
-    ncl_avg = ncl_data_avg_avg
-    ncl_sem = ncl_data_avg_sem
-    asc_all = asc_data_avg_mrg
-    asc_avg = asc_data_avg_avg
-    asc_sem = asc_data_avg_sem
-    dst_avg = ncl_dst_bin_avg
-    dst_sem = ncl_dst_bin_sem
+    # ncl_all = ncl_data_avg_mrg
+    # ncl_avg = ncl_data_avg_avg
+    # ncl_sem = ncl_data_avg_sem
+    # asc_all = asc_data_avg_mrg
+    # asc_avg = asc_data_avg_avg
+    # asc_sem = asc_data_avg_sem
+    # dst_avg = ncl_dst_bin_avg
+    # dst_sem = ncl_dst_bin_sem
 
-    # Inputs ------------------------------------------------------------------
+    # # Inputs ------------------------------------------------------------------
 
-    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
-    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-    merged = ncl_all["view"].nunique(dropna=False) > 1
+    # schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    # sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    # merged = ncl_all["view"].nunique(dropna=False) > 1
 
-    hline_params = {
-        "y" : 1, "color" : "0.75", "zorder" : 0,
-        "linewidth" : 1, "linestyle" : ":",
-        }
+    # hline_params = {
+    #     "y" : 1, "color" : "0.75", "zorder" : 0,
+    #     "linewidth" : 1, "linestyle" : ":",
+    #     }
     
-    grid_params = {
-        "axis" : "x", "color" : "0.75", "zorder" : 0,
-        "linewidth" : 1, "linestyle" : ":", 
-        }
+    # grid_params = {
+    #     "axis" : "x", "color" : "0.75", "zorder" : 0,
+    #     "linewidth" : 1, "linestyle" : ":", 
+    #     }
 
-    # Nested function(s) ------------------------------------------------------
+    # # Nested function(s) ------------------------------------------------------
     
-    def _ylim(ax, min_ymax=6):
-        _, ymax = ax.get_ylim()
-        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    # def _ylim(ax, min_ymax=6):
+    #     _, ymax = ax.get_ylim()
+    #     ax.set_ylim(0, np.maximum(min_ymax, ymax))
     
-    def _barplot(
-            ax, avg, x, err=None,
-            width=0.5, shift=0.0, color="gray"
-            ):
+    # def _barplot(
+    #         ax, avg, x, err=None,
+    #         width=0.5, shift=0.0, color="gray"
+    #         ):
         
-        x_pos = np.arange(len(x)) + shift
-        ax.bar(
-            x_pos, avg, width=width,
-            color=color, capsize=5, zorder=2,
-            )
+    #     x_pos = np.arange(len(x)) + shift
+    #     ax.bar(
+    #         x_pos, avg, width=width,
+    #         color=color, capsize=5, zorder=2,
+    #         )
         
-        if not err is None:
-            ax.errorbar(
-                x_pos, avg, yerr=np.vstack([err, err]),
-                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
-                )
+    #     if not err is None:
+    #         ax.errorbar(
+    #             x_pos, avg, yerr=np.vstack([err, err]),
+    #             capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+    #             )
             
-        ax.axhline(**hline_params)
-        ax.grid(**grid_params)
+    #     ax.axhline(**hline_params)
+    #     ax.grid(**grid_params)
     
-    def _boxplot(ax, vals, x, merged=False, color="gray"):
+    # def _boxplot(ax, vals, x, merged=False, color="gray"):
         
-        ax.boxplot(
-            vals, positions=[x], widths=0.5, patch_artist=True,
-            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
-            medianprops=dict(color=color, linewidth=2),
-            whiskerprops=dict(color="0.5", linewidth=1),
-            capprops=dict(color="0.5", linewidth=1),
-            showfliers=False,
-            )
+    #     ax.boxplot(
+    #         vals, positions=[x], widths=0.5, patch_artist=True,
+    #         boxprops=dict(color="0.5", facecolor="none", linewidth=1),
+    #         medianprops=dict(color=color, linewidth=2),
+    #         whiskerprops=dict(color="0.5", linewidth=1),
+    #         capprops=dict(color="0.5", linewidth=1),
+    #         showfliers=False,
+    #         )
         
-        ax.axhline(**hline_params)
-        ax.grid(**grid_params)    
+    #     ax.axhline(**hline_params)
+    #     ax.grid(**grid_params)    
     
-    def _lineplot(ax, vals, x, color, label):
-        ax.plot(x, vals, color=color, label=label)
-        ax.grid(**grid_params)
+    # def _lineplot(ax, vals, x, color, label):
+    #     ax.plot(x, vals, color=color, label=label)
+    #     ax.grid(**grid_params)
     
-    # Execute -----------------------------------------------------------------
+    # # Execute -----------------------------------------------------------------
     
-    # plt.ioff()
+    # # plt.ioff()
     
-    # Initialize plot
-    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
-    axes = axes.flatten()
+    # # Initialize plot
+    # fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
+    # axes = axes.flatten()
     
-    # Main title/info ---------------------------------------------------------
+    # # Main title/info ---------------------------------------------------------
        
-    # Main title    
-    fig.suptitle(
-        "Merged views" if merged else ncl_all["view"].iloc[0],
-        fontsize=16, fontweight="bold", color="k",
-        y=0.92, x=0.025, ha="left",
-        )
+    # # Main title    
+    # fig.suptitle(
+    #     "Merged views" if merged else ncl_all["view"].iloc[0],
+    #     fontsize=16, fontweight="bold", color="k",
+    #     y=0.92, x=0.025, ha="left",
+    #     )
 
-    # Secondary text
-    text = (
-        f"n views = {ncl_all['view'].nunique()} | "
-        f"n nuclei = {ncl_all['count'].sum():,} | "
-        f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
-        )
-    fig.text(
-        0.025, 0.89, text,
-        fontsize=12, color="0.5",
-        ha="left", va="top",
-        )
+    # # Secondary text
+    # text = (
+    #     f"n views = {ncl_all['view'].nunique()} | "
+    #     f"n nuclei = {ncl_all['count'].sum():,} | "
+    #     f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
+    #     )
+    # fig.text(
+    #     0.025, 0.89, text,
+    #     fontsize=12, color="0.5",
+    #     ha="left", va="top",
+    #     )
     
-    # (0) Class predictions frequency -----------------------------------------
+    # # (0) Class predictions frequency -----------------------------------------
     
-    ax = axes[0]
+    # ax = axes[0]
 
-    for cl, cla in enumerate(main.ncl_classes):
-        _barplot(
-            ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
-            color=main.ncl_colors, 
-            )
+    # for cl, cla in enumerate(main.ncl_classes):
+    #     _barplot(
+    #         ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
+    #         color=main.ncl_colors, 
+    #         )
         
-    # Legend
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Frequency")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    ax.set_title("Ncl. class pred. freq.", pad=10)
+    # # Legend
+    # ax.set_ylim(0, 1)
+    # ax.set_ylabel("Frequency")
+    # ax.set_xticks(np.arange(0, len(sclasses)))
+    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    # ax.set_title("Ncl. class pred. freq.", pad=10)
     
-    # (1) Class predictions entropy -------------------------------------------
+    # # (1) Class predictions entropy -------------------------------------------
     
-    ax = axes[1]
+    # ax = axes[1]
     
-    for cl, cla in enumerate(main.ncl_classes):
-        vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
-        _boxplot(ax, vals, cl, color=main.ncl_colors[cl])
+    # for cl, cla in enumerate(main.ncl_classes):
+    #     vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
+    #     _boxplot(ax, vals, cl, color=main.ncl_colors[cl])
         
-    # Legend
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Entropy")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    ax.set_title("Ncl. class pred. entropy", pad=10)
+    # # Legend
+    # ax.set_ylim(0, 1)
+    # ax.set_ylabel("Entropy")
+    # ax.set_xticks(np.arange(0, len(sclasses)))
+    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    # ax.set_title("Ncl. class pred. entropy", pad=10)
     
-    # (3) Class ASC intensities -----------------------------------------------
+    # # (3) Class ASC intensities -----------------------------------------------
     
-    ax = axes[3]
+    # ax = axes[3]
         
-    for t, tag in enumerate(["nsp", "spk"]):
-        shift = -0.2 if t == 0 else 0.2
-        for cl, cla in enumerate(main.ncl_classes):
-            _barplot(
-                ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
-                err=ncl_sem[f"asc_{tag}_int"],
-                width=0.3, shift=shift, color=main.ncl_colors, 
-                )
+    # for t, tag in enumerate(["nsp", "spk"]):
+    #     shift = -0.2 if t == 0 else 0.2
+    #     for cl, cla in enumerate(main.ncl_classes):
+    #         _barplot(
+    #             ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
+    #             err=ncl_sem[f"asc_{tag}_int"],
+    #             width=0.3, shift=shift, color=main.ncl_colors, 
+    #             )
             
-    ax.text(
-        0.5, 0.95, "non-speckle vs. speckle",
-        fontsize=10, color="black",
-        transform=ax.transAxes,
-        horizontalalignment="center",
-        verticalalignment="top",
-        )
+    # ax.text(
+    #     0.5, 0.95, "non-speckle vs. speckle",
+    #     fontsize=10, color="black",
+    #     transform=ax.transAxes,
+    #     horizontalalignment="center",
+    #     verticalalignment="top",
+    #     )
             
-    # Legend
-    _ylim(ax)
-    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-    ax.set_xticks(np.arange(0, len(sclasses)))
-    ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    if main.int_norm:
-        norm_str = "\n norm. int."
-    ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
+    # # Legend
+    # _ylim(ax)
+    # ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    # ax.set_xticks(np.arange(0, len(sclasses)))
+    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    # if main.int_norm:
+    #     norm_str = "\n norm. int."
+    # ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
     
-    # (4) ASC distance class enrichment ---------------------------------------
+    # # (4) ASC distance class enrichment ---------------------------------------
     
-    ax = axes[4]
+    # ax = axes[4]
     
-    for cl, cla in enumerate(main.ncl_classes):
-        x = dst_avg["bins"]
-        vals = dst_avg[cla + "_asc_nsp_dst"]
-        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+    # for cl, cla in enumerate(main.ncl_classes):
+    #     x = dst_avg["bins"]
+    #     vals = dst_avg[cla + "_asc_nsp_dst"]
+    #     _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
         
-    # Legend
-    ax.set_ylabel("Fold change")
-    ax.set_xlabel("ASC cluster dist. (pixels)")
-    ax.set_xticks(x)
-    if main.int_norm:
-        norm_str = "\n norm. dist."
-    ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
+    # # Legend
+    # ax.set_ylabel("Fold change")
+    # ax.set_xlabel("ASC cluster dist. (pixels)")
+    # ax.set_xticks(x)
+    # if main.int_norm:
+    #     norm_str = "\n norm. dist."
+    # ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
     
-    # (5) ASC distance class enrichment ---------------------------------------
+    # # (5) ASC distance class enrichment ---------------------------------------
     
-    ax = axes[5]
+    # ax = axes[5]
     
-    for cl, cla in enumerate(main.ncl_classes):
-        x = dst_avg["bins"]
-        vals = dst_avg[cla + "_asc_spk_dst"]
-        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+    # for cl, cla in enumerate(main.ncl_classes):
+    #     x = dst_avg["bins"]
+    #     vals = dst_avg[cla + "_asc_spk_dst"]
+    #     _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
         
-    # Legend
-    ax.set_ylabel("Fold change")
-    ax.set_xlabel("ASC cluster dist. (pixels)")
-    ax.set_xticks(x)
-    if main.int_norm:
-        norm_str = "\n norm. dist."
-    ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
+    # # Legend
+    # ax.set_ylabel("Fold change")
+    # ax.set_xlabel("ASC cluster dist. (pixels)")
+    # ax.set_xticks(x)
+    # if main.int_norm:
+    #     norm_str = "\n norm. dist."
+    # ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
     
-    # (6 - 11) Channel intensities --------------------------------------------
+    # # (6 - 11) Channel intensities --------------------------------------------
     
-    for cl, cla in enumerate(main.ncl_classes):
+    # for cl, cla in enumerate(main.ncl_classes):
 
-        ax = axes[cl + 6]                   
+    #     ax = axes[cl + 6]                   
         
-        for ch, chn in enumerate(schannels):
-            vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
-            _boxplot(ax, vals, ch, color=main.ncl_colors[cl])
+    #     for ch, chn in enumerate(schannels):
+    #         vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
+    #         _boxplot(ax, vals, ch, color=main.ncl_colors[cl])
                     
-        # Legend
-        _ylim(ax)
-        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-        ax.set_xticklabels(schannels, rotation=45, ha="center")
-        if main.int_norm:
-            norm_str = "\nnorm. int."
-        ax.set_title(cla + norm_str, pad=10)
+    #     # Legend
+    #     _ylim(ax)
+    #     ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    #     ax.set_xticklabels(schannels, rotation=45, ha="center")
+    #     if main.int_norm:
+    #         norm_str = "\nnorm. int."
+    #     ax.set_title(cla + norm_str, pad=10)
     
-    # -------------------------------------------------------------------------
+    # # -------------------------------------------------------------------------
     
-    plt.tight_layout(rect=[0, 0, 1, 0.9])
-    # plt.close(fig) 
-    # plt.ion()
+    # plt.tight_layout(rect=[0, 0, 1, 0.9])
+    # # plt.close(fig) 
+    # # plt.ion()

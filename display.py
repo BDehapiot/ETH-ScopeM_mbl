@@ -7,7 +7,10 @@ from skimage import io
 from main import Main, main_parameters
 
 # functions
-from functions import get_mask_from_coords
+from functions import  get_sfactor, get_mask_from_coords
+
+# skimage
+from skimage.transform import rescale
 
 # Qt
 from qtpy.QtCore import Qt
@@ -71,6 +74,7 @@ class Display:
         
         # Paths
         vws_path = self.vws_paths[self.vws_idx]
+        pvw_msk_path = vws_path / "preview_mask.tif"
         stk_nrm_path = vws_path / "stack_norm.tif"
         ncl_prp_path = vws_path / "nuclei_properties.pkl"
         ncl_cls_path = vws_path / "nuclei_classes.pkl"
@@ -88,19 +92,28 @@ class Display:
             self.asc_prp = pickle.load(file)
         with open(asc_cls_path, "rb") as file:
             self.asc_cls = pickle.load(file)["class"] + 1
+        self.pvw_msk = io.imread(pvw_msk_path)
         self.stk_nrm = io.imread(stk_nrm_path)
-        
-        # self.ncl_plt = QPixmap(str(ncl_plt_path))
-        # self.ncl_plt = self.ncl_plt.scaledToWidth(
-        #     int(self.dock_width / 1.75), Qt.SmoothTransformation)
         
         self.ncl_ctd = np.column_stack((
             self.ncl_prp["y"], self.ncl_prp["x"]))
+        self.pvw_msk = rescale(
+            self.pvw_msk, get_sfactor(self.pvw_level, self.stk_level), order=0,
+            )
+        self.ncl_msk = get_mask_from_coords(
+            self.ncl_prp["coords"], 
+            labels=None,
+            shape=self.stk_nrm[0, ...].shape
+            )
         self.asc_msk = get_mask_from_coords(
             self.asc_prp["coords"], 
             labels=self.asc_cls,
             shape=self.stk_nrm[0, ...].shape
             )
+        
+        # self.ncl_plt = QPixmap(str(ncl_plt_path))
+        # self.ncl_plt = self.ncl_plt.scaledToWidth(
+        #     int(self.dock_width / 1.75), Qt.SmoothTransformation)
         
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 
@@ -113,6 +126,8 @@ class Display:
         self.vwr.layers["stk_nrm"].data = self.stk_nrm[self.chn_idx]
         self.vwr.layers["ncl_ctd"].data = self.ncl_ctd
         self.vwr.layers["ncl_ctd"].features = {"class_label": self.ncl_cls}
+        self.vwr.layers["pvw_msk"].data = self.pvw_msk
+        self.vwr.layers["ncl_msk"].data = self.ncl_msk
         self.vwr.layers["asc_msk"].data = self.asc_msk
         # self.plt_label.setPixmap(self.ncl_plt)
         self.update_ncl_class()
@@ -130,7 +145,19 @@ class Display:
         self.ncl_msk = np.isin(self.ncl_cls, self.cls_idx)
         self.vwr.layers["ncl_ctd"].shown = self.ncl_msk
         
-    def update_asc_class(self):
+    def update_pvw_msk(self):
+        if self.chk_pvw.isChecked():
+            self.vwr.layers["pvw_msk"].visible = True
+        else:
+            self.vwr.layers["pvw_msk"].visible = False
+        
+    def update_ncl_msk(self):
+        if self.chk_ncl.isChecked():
+            self.vwr.layers["ncl_msk"].visible = True
+        else:
+            self.vwr.layers["ncl_msk"].visible = False
+        
+    def update_asc_msk(self):
         if self.chk_asc.isChecked():
             self.vwr.layers["asc_msk"].visible = True
         else:
@@ -194,16 +221,19 @@ class Display:
             getattr(self, f"chk_{c}").stateChanged.connect(self.update_ncl_class)
         self.ncl_group_box.setLayout(self.ncl_group_layout)
         
-        # Create "Check ASC class" menu
-        self.asc_group = QButtonGroup()
-        self.asc_group.setExclusive(False)
-        self.asc_group_box = QGroupBox("Check ASC class")
-        self.asc_group_layout = QHBoxLayout()
+        # Create "Check masks" menu
+        self.msk_group = QButtonGroup()
+        self.msk_group.setExclusive(False)
+        self.msk_group_box = QGroupBox("Check masks")
+        self.msk_group_layout = QHBoxLayout()
+        self.chk_pvw = QCheckBox("tissue")
+        self.chk_ncl = QCheckBox("nuclei")
         self.chk_asc = QCheckBox("ASC")
-        self.asc_group.addButton(self.chk_asc)
-        self.asc_group_layout.addWidget(self.chk_asc)
-        self.asc_group_box.setLayout(self.asc_group_layout)
-        self.chk_asc.stateChanged.connect(self.update_asc_class)
+        for tag in ["pvw", "ncl", "asc"]:
+            self.msk_group.addButton(getattr(self, f"chk_{tag}"))
+            self.msk_group_layout.addWidget(getattr(self, f"chk_{tag}"))
+            getattr(self, f"chk_{tag}").stateChanged.connect(getattr(self, f"update_{tag}_msk"))
+        self.msk_group_box.setLayout(self.msk_group_layout)
         
         # Create "plot" menu
         self.plt_label = QLabel()
@@ -214,7 +244,7 @@ class Display:
         self.layout.addWidget(self.vws_group_box)
         self.layout.addWidget(self.chn_group_box)
         self.layout.addWidget(self.ncl_group_box)
-        self.layout.addWidget(self.asc_group_box)
+        self.layout.addWidget(self.msk_group_box)
         self.layout.addWidget(self.plt_label)
 
         # Create widget
@@ -256,6 +286,14 @@ class Display:
             opacity=0.6, 
             )
         
+        self.vwr.add_image(
+            self.pvw_msk, name="pvw_msk", colormap="bop orange", visible=0,
+            blending="additive", opacity=0.2, 
+            )
+        self.vwr.add_image(
+            self.ncl_msk, name="ncl_msk", colormap="bop blue", visible=0,
+            blending="additive", opacity=0.6, 
+            )
         self.vwr.add_labels(
             self.asc_msk, name="asc_msk", visible=0,
             blending="additive", opacity=0.8, 

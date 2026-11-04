@@ -245,17 +245,32 @@ def get_preview_stats(pvw_raw, pvw_msk, channels):
 #%% function(s) : get_obj_mask() ----------------------------------------------
 
 def get_obj_mask(
-        prd, thresh_0=0.25, thresh_1=0.50, min_size=8, 
-        prd_level=0, msk_level=1,
+        prd, pvw_msk, thresh_0=0.25, thresh_1=0.50, min_size=8, max_size=None, 
+        prd_level=0, msk_level=1, pvw_level=4,
         ):
     
-    # Initialize
-    rf = get_sfactor(prd_level, msk_level, ndim=1, pixel_size=None)
-    min_size = min_size * (rf ** 2) 
+    # Nested function(s) ------------------------------------------------------
     
-    # Rescale prediction (if required)
-    if rf != 1: 
-        prd = rescale(prd, rf)
+    def filter_object_size(msk, min_size=8, max_size=None):
+        msk = remove_small_objects(msk, min_size=min_size)
+        if max_size is None:
+            return msk
+        msk_large = remove_small_objects(msk, min_size=max_size)
+        return msk & ~msk_large
+    
+    # Execute -----------------------------------------------------------------
+    
+    # Initialize
+    rf_prd = get_sfactor(prd_level, msk_level, ndim=1, pixel_size=None)
+    rf_pvw = get_sfactor(pvw_level, msk_level, ndim=1, pixel_size=None)
+    min_size = min_size * (rf_prd ** 2) 
+    max_size = max_size * (rf_prd ** 2) 
+    
+    # Rescale
+    if rf_prd != 1: 
+        prd = rescale(prd, rf_prd)
+    if rf_pvw != 1:
+        pvw_msk = rescale(pvw_msk, rf_pvw, order=0)
         
     # Get mask
     if thresh_1 is not None:
@@ -267,10 +282,12 @@ def get_obj_mask(
     else:
         msk = prd > thresh_0
     
-    # Remove small objects
-    if min_size > 0:
-        msk = remove_small_objects(msk, min_size=min_size)
+    # Remove "out of" pvw_msk objects
+    msk[pvw_msk == 0] = 0
     
+    # Filter object size
+    filter_object_size(msk, min_size=min_size, max_size=max_size)
+        
     return msk
 
 def get_mask_from_coords(coords, labels=None, shape=(2048, 2048)):
