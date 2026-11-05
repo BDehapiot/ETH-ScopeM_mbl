@@ -131,8 +131,11 @@ class AnnotateASC:
     def add_spk(self):
         self.vwr.layers["asc_slc"].selected_label = 1
     
-    def rmv_spk(self):
+    def add_nsp(self):
         self.vwr.layers["asc_slc"].selected_label = 2
+        
+    def add_nvl(self):
+        self.vwr.layers["asc_slc"].selected_label = 3
 
     def hide_mask(self):
         self.vwr.layers["asc_msk"].visible = 0
@@ -162,11 +165,13 @@ class AnnotateASC:
         # Create "classify" menu
         self.cls_group_box = QGroupBox("Classify")
         self.cls_group_layout = QVBoxLayout()
-        self.cls_add = QRadioButton("Speckle")
-        self.cls_rmv = QRadioButton("Non-speckle")
-        self.cls_add.setChecked(True)
-        self.cls_group_layout.addWidget(self.cls_add)
-        self.cls_group_layout.addWidget(self.cls_rmv)
+        self.cls_spk = QRadioButton("Speckle")
+        self.cls_nsp = QRadioButton("Non-speckle")
+        self.cls_nvl = QRadioButton("Non-valid")
+        self.cls_spk.setChecked(True)
+        self.cls_group_layout.addWidget(self.cls_spk)
+        self.cls_group_layout.addWidget(self.cls_nsp)
+        self.cls_group_layout.addWidget(self.cls_nvl)
         self.cls_group_box.setLayout(self.cls_group_layout)
                 
         # Create texts
@@ -190,8 +195,9 @@ class AnnotateASC:
     
         self.vws_prv.clicked.connect(self.prev_view)
         self.vws_nxt.clicked.connect(self.next_view)
-        self.cls_add.toggled.connect(self.add_spk)
-        self.cls_rmv.toggled.connect(self.rmv_spk)
+        self.cls_spk.toggled.connect(self.add_spk)
+        self.cls_nsp.toggled.connect(self.add_nsp)
+        self.cls_nvl.toggled.connect(self.add_nvl)
         
         # Shortcuts -----------------------------------------------------------
 
@@ -256,13 +262,15 @@ class AnnotateASC:
 
     def get_info(self):
 
-        n_add = self.asc_ann["class"].count(1)
-        n_rmv = self.asc_ann["class"].count(2)
+        n_spk = self.asc_ann["class"].count(1)
+        n_nsp = self.asc_ann["class"].count(2)
+        n_nvl = self.asc_ann["class"].count(3)
 
         self.info.setText(
             f"{self.vws_paths[self.vws_idx].name}\n"
-            f"n Speckle     = {n_add}\n"
-            f"n Non-speckle = {n_rmv}"
+            f"n Speckle     = {n_spk}\n"
+            f"n Non-speckle = {n_nsp}\n"
+            f"n Non-valid   = {n_nvl}"
             )
 
 #%% Execute -------------------------------------------------------------------

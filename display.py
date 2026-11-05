@@ -294,9 +294,9 @@ class Display:
             self.ncl_msk, name="ncl_msk", colormap="bop blue", visible=0,
             blending="additive", opacity=0.6, 
             )
-        self.vwr.add_labels(
-            self.asc_msk, name="asc_msk", visible=0,
-            blending="additive", opacity=0.8, 
+        self.vwr.add_image(
+            self.asc_msk, name="asc_msk", colormap="turbo", visible=0,
+            blending="additive", opacity=0.8, contrast_limits=[0, 3]
             )
         
         # self.plt_label.setPixmap(self.ncl_plt)

@@ -252,19 +252,22 @@ def get_obj_mask(
     # Nested function(s) ------------------------------------------------------
     
     def filter_object_size(msk, min_size=8, max_size=None):
-        msk = remove_small_objects(msk, min_size=min_size)
-        if max_size is None:
-            return msk
-        msk_large = remove_small_objects(msk, min_size=max_size)
-        return msk & ~msk_large
+        if min_size is not None:
+            msk = remove_small_objects(msk, min_size=min_size)
+        if max_size is not None:
+            msk_large = remove_small_objects(msk, min_size=max_size + 1)
+            msk = msk & ~msk_large
+        return msk
     
     # Execute -----------------------------------------------------------------
     
     # Initialize
     rf_prd = get_sfactor(prd_level, msk_level, ndim=1, pixel_size=None)
     rf_pvw = get_sfactor(pvw_level, msk_level, ndim=1, pixel_size=None)
-    min_size = min_size * (rf_prd ** 2) 
-    max_size = max_size * (rf_prd ** 2) 
+    if min_size is not None:
+        min_size = min_size * (rf_prd ** 2) 
+    if max_size is not None:
+        max_size = max_size * (rf_prd ** 2) 
     
     # Rescale
     if rf_prd != 1: 
@@ -286,7 +289,7 @@ def get_obj_mask(
     msk[pvw_msk == 0] = 0
     
     # Filter object size
-    filter_object_size(msk, min_size=min_size, max_size=max_size)
+    msk = filter_object_size(msk, min_size=min_size, max_size=max_size)
         
     return msk
 

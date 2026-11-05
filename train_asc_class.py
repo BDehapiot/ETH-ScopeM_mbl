@@ -47,8 +47,8 @@ model_parameters = {
     
     # cls
     "filters"            : [16, 32],
-    "n_classes"          : 2,
-    "classes"            : ["Speckle", "Normal"],
+    "n_classes"          : 3,
+    "classes"            : ["Speckle", "Non-speckle", "Non-valid"],
     "glob_avg_pool"      : False,
     "regularizer"        : None,
     "dropout"            : 0.3,
@@ -59,7 +59,7 @@ model_parameters = {
     
     # Prepare -----------------------------------------------------------------
     
-    "patch_size"         : 12,
+    "patch_size"         : 24,
     "patch_overlap"      : 0,
 
     # Train -------------------------------------------------------------------
@@ -205,24 +205,54 @@ class TrainASCClasses:
         
 #%% Class(TrainASCClasses) : train() ------------------------------------------
 
+    # def train(self):
+        
+    #     # Paths
+    #     asc_ann_path = self.train_path / "stock_in" / "asc_ann.pkl"
+    #     asc_crp_path = self.train_path / "stock_in" / "asc_crp.tif"
+        
+    #     # Load
+    #     with open(asc_ann_path, "rb") as file:
+    #         asc_ann = pickle.load(file)    
+    #     asc_crp = io.imread(asc_crp_path)
+        
+    #     # Prepare data
+    #     asc_ann = np.array(asc_ann["class"]) - 1
+    #     asc_crp = asc_crp.astype("float32") / 255        
+        
+    #     # Setup model
+    #     self.model = Model(parameters=self.model_parameters, model_path=None)
+        
+    #     # Train model
+    #     self.model.train(asc_crp, y=asc_ann)
+        
     def train(self):
         
         # Paths
-        asc_ann_path = self.train_path / "stock_in" / "asc_ann.pkl"
-        asc_crp_path = self.train_path / "stock_in" / "asc_crp.tif"
-        
+        stk_in_path = self.train_path / "stock_in"
+        asc_ann_paths = sorted(stk_in_path.glob("asc_ann*.pkl"))
+        asc_crp_paths = sorted(stk_in_path.glob("asc_crp*.tif"))
+        if not asc_ann_paths or not asc_crp_paths:
+            raise FileNotFoundError("No asc_ann*.pkl or asc_crp*.tif files found")
+    
         # Load
-        with open(asc_ann_path, "rb") as file:
-            asc_ann = pickle.load(file)    
-        asc_crp = io.imread(asc_crp_path)
+        asc_ann = []
+        for path in asc_ann_paths:
+            with open(path, "rb") as file:
+                _asc_ann = pickle.load(file)
+                asc_ann.append(np.array(_asc_ann["class"]) - 1)
+        asc_crp = [
+            io.imread(path).astype("float32") / 255 for path in asc_crp_paths]
         
-        # Prepare data
-        asc_ann = np.array(asc_ann["class"]) - 1
-        asc_crp = asc_crp.astype("float32") / 255        
+        # Concatenate
+        asc_ann = np.concatenate(asc_ann, axis=0)
+        asc_crp = np.concatenate(asc_crp, axis=0)
         
+        self.asc_crp = asc_crp
+    
         # Setup model
         self.model = Model(parameters=self.model_parameters, model_path=None)
-        
+    
         # Train model
         self.model.train(asc_crp, y=asc_ann)
                         
@@ -232,3 +262,4 @@ if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     train = TrainASCClasses(
         main, parameters=parameters, model_parameters=model_parameters)  
+    asc_crp = train.asc_crp

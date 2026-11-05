@@ -43,11 +43,11 @@ main_parameters = {
 
     # Procedure
     "force_extract"         : 1,
-    "force_predict_nuclei"  : 2,
+    "force_predict_nuclei"  : 1,
     "force_predict_asc"     : 1,
-    "force_classify_nuclei" : 2,
-    "force_classify_asc"    : 1,
-    "force_measure"         : 2,
+    "force_classify_nuclei" : 1,
+    "force_classify_asc"    : 2,
+    "force_measure"         : 1,
     "force_analyse"         : 0,
     
     # Paths
@@ -56,7 +56,7 @@ main_parameters = {
     "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
     "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
     "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
-    "model_asc_class_name"  : "model-cls_asc_12_2_2_2496-8192b",
+    "model_asc_class_name"  : "model-cls_asc_24_2_3_1875-8190b",
     
     # extract()
     "pvw_level"             : 4,
@@ -64,10 +64,10 @@ main_parameters = {
         
     # predict_nuclei()
     "ncl_level"             : 0,
-    "ncl_thresh_0"          : 0.25,
-    "ncl_thresh_1"          : 0.50,
+    "ncl_thresh_0"          : 0.20,
+    "ncl_thresh_1"          : 0.40,
     "ncl_min_size"          : 8,    # in µm² at level = 0
-    "ncl_max_size"          : 64,   # in µm² at level = 0
+    "ncl_max_size"          : 512,  # in µm² at level = 0
     
     # predict_asc()
     "asc_level"             : 0,
