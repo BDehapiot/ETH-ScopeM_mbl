@@ -1,6 +1,5 @@
 #%% Imports -------------------------------------------------------------------
 
-import napari
 import pickle
 import numpy as np
 from skimage import io
@@ -11,6 +10,10 @@ from functions import  get_sfactor, get_mask_from_coords
 
 # skimage
 from skimage.transform import rescale
+
+# Napari
+import napari
+from napari.utils.colormaps import Colormap
 
 # Qt
 from qtpy.QtCore import Qt
@@ -270,11 +273,13 @@ class Display:
         
         self.load_data()
         
+        # stk_nrm
         self.vwr.add_image(
             self.stk_nrm[self.chn_idx], name="stk_nrm", visible=1,
             blending="additive", opacity=0.6, gamma=0.4, 
             )
-                        
+            
+        # ncl_ctd
         self.vwr.add_points(
             self.ncl_ctd, name="ncl_ctd", visible=1,
             blending="translucent", size=6, border_width=0.0,
@@ -286,18 +291,44 @@ class Display:
             opacity=0.6, 
             )
         
+        # pvw_msk 
         self.vwr.add_image(
             self.pvw_msk, name="pvw_msk", colormap="bop orange", visible=0,
-            blending="additive", opacity=0.2, 
+            blending="translucent", opacity=0.2, 
             )
+        
+        # ncl_msk
         self.vwr.add_image(
             self.ncl_msk, name="ncl_msk", colormap="bop blue", visible=0,
-            blending="additive", opacity=0.6, 
+            blending="translucent", opacity=0.6, 
             )
+        
+        # asc_msk
+
+        asc_msk_colors = [
+            [0.0, 0.0, 0.0, 0.0], # background 
+            [0.0, 0.6, 1.0, 0.8], # speckles
+            [0.2, 1.0, 0.2, 0.8], # non-speckles
+            [1.0, 0.2, 0.2, 0.8], # non-valid
+            ]
+        
+        controls = [0.0, 0.166, 0.166, 0.5, 0.5, 0.833, 0.833, 1.0]
+
+        step_colors = [
+            asc_msk_colors[0], asc_msk_colors[0],
+            asc_msk_colors[1], asc_msk_colors[1],
+            asc_msk_colors[2], asc_msk_colors[2],
+            asc_msk_colors[3], asc_msk_colors[3],
+            ]
+        
+        cat_colormap = Colormap(colors=step_colors, controls=controls, name="category_4col")
+        
         self.vwr.add_image(
-            self.asc_msk, name="asc_msk", colormap="turbo", visible=0,
-            blending="additive", opacity=0.8, contrast_limits=[0, 3]
+            self.asc_msk, name="asc_msk", colormap=cat_colormap, visible=0,
+            blending="translucent", opacity=0.8, contrast_limits=[0, 3],
             )
+        
+        # ///
         
         # self.plt_label.setPixmap(self.ncl_plt)
         self.update_ncl_class()
