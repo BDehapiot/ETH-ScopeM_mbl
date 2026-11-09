@@ -46,9 +46,9 @@ main_parameters = {
     "force_predict_nuclei"  : 1,
     "force_predict_asc"     : 1,
     "force_classify_nuclei" : 1,
-    "force_classify_asc"    : 2,
+    "force_classify_asc"    : 1,
     "force_measure"         : 1,
-    "force_analyse"         : 0,
+    "force_analyse"         : 1,
     
     # Paths
     "data_path"             : Path("D:\local_mbl\data"),
@@ -56,7 +56,7 @@ main_parameters = {
     "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
     "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
     "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
-    "model_asc_class_name"  : "model-cls_asc_24_2_3_1875-8190b",
+    "model_asc_class_name"  : "model-cls_asc_48_4_3_4467-8190b",
     
     # extract()
     "pvw_level"             : 4,
@@ -95,7 +95,7 @@ main_parameters = {
         "Other", "Epithelium", "Neutrophil", "Macrophage", "Bcell", "Tcell",  
         ],
     "asc_classes" : [
-        "Speckle", "Non-speckle"
+        "Speckle", "Non-speckle", "Non-valid",
         ],
     
     "ncl_colors" : [
@@ -729,7 +729,7 @@ class Main:
                     labels=asc_cls["class"] + 1,
                     shape=stk_nrm[0, ...].shape
                     )
-                    
+                
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")
                                 
@@ -738,7 +738,7 @@ class Main:
                 t0 = time.time()
                 
                 ncl_int = get_ncl_intensities(
-                    stk_nrm, ncl_prp, asc_prp, asc_msk, self.channels, 
+                    stk_nrm, ncl_prp, asc_msk, self.channels, 
                     crop_size=self.int_crop_size, normalize=self.int_norm,
                     )
 
@@ -815,10 +815,10 @@ class Main:
                 self.ncl_cls  = ncl_cls
                 self.asc_prp  = asc_prp
                 self.asc_cls  = asc_cls
+                self.asc_msk  = asc_msk
                 
                 self.ncl_int  = ncl_int
                 self.ncl_dst  = ncl_dst
-                
                 self.asc_sts  = asc_sts
                 
                 self.ncl_data = ncl_data
@@ -1023,9 +1023,12 @@ if __name__ == "__main__":
     # ncl_cls  = main.ncl_cls
     # asc_prp  = main.asc_prp
     # asc_cls  = main.asc_cls
+    # asc_msk  = main.asc_msk
+    
     # ncl_int  = main.ncl_int
     # ncl_dst  = main.ncl_dst
     # asc_sts  = main.asc_sts
+    
     # ncl_data = main.ncl_data
     # ncl_data_avg = main.ncl_data_avg
     # ncl_data_std = main.ncl_data_std
@@ -1035,376 +1038,247 @@ if __name__ == "__main__":
     # asc_data_std = main.asc_data_std
     # asc_data_sem = main.asc_data_sem
 
-    # asc_sts_mrg = main.asc_sts_mrg
-    # ncl_data_avg_mrg = main.ncl_data_avg_mrg
-    # ncl_data_avg_avg = main.ncl_data_avg_avg
-    # ncl_data_avg_std = main.ncl_data_avg_std
-    # ncl_data_avg_sem = main.ncl_data_avg_sem
-    # asc_data_avg_mrg = main.asc_data_avg_mrg
-    # asc_data_avg_avg = main.asc_data_avg_avg
-    # asc_data_avg_std = main.asc_data_avg_std
-    # asc_data_avg_sem = main.asc_data_avg_sem
+    asc_sts_mrg = main.asc_sts_mrg
+    ncl_data_avg_mrg = main.ncl_data_avg_mrg
+    ncl_data_avg_avg = main.ncl_data_avg_avg
+    ncl_data_avg_std = main.ncl_data_avg_std
+    ncl_data_avg_sem = main.ncl_data_avg_sem
+    asc_data_avg_mrg = main.asc_data_avg_mrg
+    asc_data_avg_avg = main.asc_data_avg_avg
+    asc_data_avg_std = main.asc_data_avg_std
+    asc_data_avg_sem = main.asc_data_avg_sem
     
-    # ncl_dst_bin = main.ncl_dst_bin
-    # ncl_dst_bin_mrg = main.ncl_dst_bin_mrg
-    # ncl_dst_bin_avg = main.ncl_dst_bin_avg
-    # ncl_dst_bin_std = main.ncl_dst_bin_std
-    # ncl_dst_bin_sem = main.ncl_dst_bin_sem
+    ncl_dst_bin = main.ncl_dst_bin
+    ncl_dst_bin_mrg = main.ncl_dst_bin_mrg
+    ncl_dst_bin_avg = main.ncl_dst_bin_avg
+    ncl_dst_bin_std = main.ncl_dst_bin_std
+    ncl_dst_bin_sem = main.ncl_dst_bin_sem
     
     # # Display
     # import napari
     # vwr = napari.Viewer()
-    # vwr.add_image(pvw_msk)
-            
+    # vwr.add_image(asc_msk)
+    
 #%%
 
-    # def get_asc_stats(
-    #     pvw_msk, ncl_prp, asc_prp, asc_cls,
-    #     vws_path, pvw_level=4, stk_level=1, 
-    #     ): 
+    import matplotlib.pyplot as plt
 
-    #     # Init.
-    #     asc_sts = {}
-    #     pvw_factor = (2 ** pvw_level) ** 2
-    #     asc_factor = (2 ** stk_level) ** 2
-    #     spk_idx = np.where(asc_cls["class"] == 0)[0]
+    # -------------------------------------------------------------------------
+
+    ncl_all = ncl_data_avg_mrg
+    ncl_avg = ncl_data_avg_avg
+    ncl_sem = ncl_data_avg_sem
+    asc_all = asc_data_avg_mrg
+    asc_avg = asc_data_avg_avg
+    asc_sem = asc_data_avg_sem
+    dst_avg = ncl_dst_bin_avg
+    dst_sem = ncl_dst_bin_sem
+
+    # Inputs ------------------------------------------------------------------
+
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = ncl_all["view"].nunique(dropna=False) > 1
+
+    hline_params = {
+        "y" : 1, "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":",
+        }
+    
+    grid_params = {
+        "axis" : "x", "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":", 
+        }
+
+    # Nested function(s) ------------------------------------------------------
+    
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    
+    def _barplot(
+            ax, avg, x, err=None,
+            width=0.5, shift=0.0, color="gray"
+            ):
+        
+        x_pos = np.arange(len(x)) + shift
+        ax.bar(
+            x_pos, avg, width=width,
+            color=color, capsize=5, zorder=2,
+            )
+        
+        if not err is None:
+            ax.errorbar(
+                x_pos, avg, yerr=np.vstack([err, err]),
+                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+                )
             
-    #     # Areas
-    #     all_area = np.sum(pvw_msk > 0) * pvw_factor
-    #     asc_area = np.sum(asc_prp["area"]) * asc_factor
-    #     asc_area_ratio = asc_area / all_area
-    #     spk_area = np.sum(asc_prp["area"][spk_idx]) * asc_factor
-    #     spk_area_ratio = spk_area / all_area    
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+    
+    def _boxplot(ax, vals, x, merged=False, color="gray"):
         
-    #     # Counts
-    #     ncl_num = len(ncl_prp["y"])
-    #     asc_num = len(asc_prp["y"])
-    #     spk_num = (asc_cls["class"] == 0).sum()
-    #     asc_num_ratio = asc_num / ncl_num
-    #     spk_num_ratio = spk_num / ncl_num
-                
-    #     # Append
-    #     asc_sts["all_area"      ] = all_area
-    #     asc_sts["asc_area"      ] = asc_area
-    #     asc_sts["asc_area_ratio"] = asc_area_ratio
-    #     asc_sts["spk_area_ratio"] = spk_area_ratio
-    #     asc_sts["ncl_num"       ] = ncl_num
-    #     asc_sts["asc_num"       ] = asc_num
-    #     asc_sts["spk_num"       ] = spk_num
-    #     asc_sts["asc_num_ratio" ] = asc_num_ratio
-    #     asc_sts["spk_num_ratio" ] = spk_num_ratio
+        ax.boxplot(
+            vals, positions=[x], widths=0.5, patch_artist=True,
+            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
+            medianprops=dict(color=color, linewidth=2),
+            whiskerprops=dict(color="0.5", linewidth=1),
+            capprops=dict(color="0.5", linewidth=1),
+            showfliers=False,
+            )
         
-    #     # Format
-    #     asc_sts = pd.DataFrame([asc_sts])
-    #     asc_sts.insert(0, "view", vws_path.name)
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)    
+    
+    def _lineplot(ax, vals, x, color, label):
+        ax.plot(x, vals, color=color, label=label)
+        ax.grid(**grid_params)
+    
+    # Execute -----------------------------------------------------------------
+    
+    # plt.ioff()
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
+    axes = axes.flatten()
+    
+    # Main title/info ---------------------------------------------------------
+       
+    # Main title    
+    fig.suptitle(
+        "Merged views" if merged else ncl_all["view"].iloc[0],
+        fontsize=16, fontweight="bold", color="k",
+        y=0.92, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n views = {ncl_all['view'].nunique()} | "
+        f"n nuclei = {ncl_all['count'].sum():,} | "
+        f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
+        )
+    fig.text(
+        0.025, 0.89, text,
+        fontsize=12, color="0.5",
+        ha="left", va="top",
+        )
+    
+    # (0) Class predictions frequency -----------------------------------------
+    
+    ax = axes[0]
+
+    for cl, cla in enumerate(main.ncl_classes):
+        _barplot(
+            ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
+            color=main.ncl_colors, 
+            )
         
-    #     return asc_sts
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. freq.", pad=10)
+    
+    # (1) Class predictions entropy -------------------------------------------
+    
+    ax = axes[1]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
+        _boxplot(ax, vals, cl, color=main.ncl_colors[cl])
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Entropy")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. entropy", pad=10)
+    
+    # (3) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[3]
+        
+    for t, tag in enumerate(["nsp", "spk"]):
+        shift = -0.2 if t == 0 else 0.2
+        for cl, cla in enumerate(main.ncl_classes):
+            _barplot(
+                ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
+                err=ncl_sem[f"asc_{tag}_int"],
+                width=0.3, shift=shift, color=main.ncl_colors, 
+                )
+            
+    ax.text(
+        0.5, 0.95, "non-speckle vs. speckle",
+        fontsize=10, color="black",
+        transform=ax.transAxes,
+        horizontalalignment="center",
+        verticalalignment="top",
+        )
+            
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    if main.int_norm:
+        norm_str = "\n norm. int."
+    ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
+    
+    # (4) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[4]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_nsp_dst"]
+        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if main.int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (5) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[5]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_spk_dst"]
+        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if main.int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (6 - 11) Channel intensities --------------------------------------------
+    
+    for cl, cla in enumerate(main.ncl_classes):
+
+        ax = axes[cl + 6]                   
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
+            _boxplot(ax, vals, ch, color=main.ncl_colors[cl])
+                    
+        # Legend
+        _ylim(ax)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        if main.int_norm:
+            norm_str = "\nnorm. int."
+        ax.set_title(cla + norm_str, pad=10)
     
     # -------------------------------------------------------------------------
     
-    # def get_asc_stats(
-    #     pvw_msk, ncl_prp, asc_prp, asc_cls, vws_path,
-    #     pvw_level=4, pixel_size=0.5,
-    #     ): 
-
-    #     # Init.
-    #     asc_sts = {}
-    #     spk_idx = np.where(asc_cls["class"] == 0)[0]
-    #     nsp_idx = np.where(asc_cls["class"] == 1)[0]
-    #     sfactor = get_sfactor(pvw_level, 0, ndim=2, pixel_size=pixel_size)
-            
-    #     # Areas
-    #     tissue_area = np.sum(pvw_msk > 0) * sfactor
-    #     asc_all_area = np.sum(asc_prp["area"])
-    #     asc_spk_area = np.sum(asc_prp["area"][spk_idx])
-    #     asc_nsp_area = np.sum(asc_prp["area"][nsp_idx])
-    #     asc_all_area_ratio = asc_all_area / tissue_area
-    #     asc_spk_area_ratio = asc_spk_area / tissue_area  
-    #     asc_nsp_area_ratio = asc_nsp_area / tissue_area  
-        
-    #     # Counts
-    #     ncl_num = len(ncl_prp["y"])
-    #     asc_all_num = len(asc_prp["y"])        
-    #     asc_spk_num = (asc_cls["class"] == 0).sum()
-    #     asc_nsp_num = (asc_cls["class"] == 1).sum()
-    #     asc_all_num_ratio = asc_all_num / ncl_num
-    #     asc_spk_num_ratio = asc_spk_num / ncl_num
-    #     asc_nsp_num_ratio = asc_nsp_num / ncl_num
-  
-    #     # Append
-    #     asc_sts["tissue_area"       ] = tissue_area
-    #     asc_sts["asc_all_area"      ] = asc_all_area
-    #     asc_sts["asc_all_area_ratio"] = asc_all_area_ratio
-    #     asc_sts["asc_spk_area"      ] = asc_spk_area
-    #     asc_sts["asc_spk_area_ratio"] = asc_spk_area_ratio
-    #     asc_sts["asc_nsp_area"      ] = asc_nsp_area
-    #     asc_sts["asc_nsp_area_ratio"] = asc_nsp_area_ratio
-        
-    #     asc_sts["ncl_num"           ] = ncl_num
-    #     asc_sts["asc_all_num"       ] = asc_all_num
-    #     asc_sts["asc_spk_num"       ] = asc_spk_num
-    #     asc_sts["asc_nsp_num"       ] = asc_nsp_num
-    #     asc_sts["asc_all_num_ratio" ] = asc_all_num_ratio
-    #     asc_sts["asc_spk_num_ratio" ] = asc_spk_num_ratio
-    #     asc_sts["asc_nsp_num_ratio" ] = asc_nsp_num_ratio
-        
-    #     # Format
-    #     asc_sts = pd.DataFrame([asc_sts])
-    #     asc_sts.insert(0, "view", vws_path.name)
-        
-    #     return asc_sts
-    
-    # # -------------------------------------------------------------------------
-    
-    # # Paths
-    # vws_path = main.vws_paths[0]
-    # pvw_msk_path = vws_path / "preview_mask.tif"
-    # ncl_prp_path = vws_path / "nuclei_properties.pkl"
-    # ncl_cls_path = vws_path / "nuclei_classes.pkl"
-    # ncl_data_path = vws_path / "nuclei_data.csv"
-    # asc_prp_path = vws_path / "asc_properties.pkl"
-    # asc_cls_path = vws_path / "asc_classes.pkl"
-    # asc_data_path = vws_path / "asc_data.csv"
-    
-    # # Load
-    # pvw_msk = io.imread(pvw_msk_path)
-    # with open(ncl_prp_path, "rb") as file: 
-    #     ncl_prp = pickle.load(file)
-    # with open(ncl_cls_path, "rb") as file: 
-    #     ncl_cls = pickle.load(file)
-    # with open(asc_prp_path, "rb") as file: 
-    #     asc_prp = pickle.load(file)
-    # with open(asc_cls_path, "rb") as file: 
-    #     asc_cls = pickle.load(file)
-    # ncl_data = pd.read_csv(ncl_data_path)
-    # asc_data = pd.read_csv(asc_data_path)
-    
-    # # Run
-    # asc_sts = get_asc_stats(
-    #     pvw_msk, ncl_prp, asc_prp, asc_cls,
-    #     vws_path, pvw_level=4, pixel_size=0.5,
-    #     )   
-    
-#%%
-
-    # import matplotlib.pyplot as plt
-
-    # # -------------------------------------------------------------------------
-
-    # ncl_all = ncl_data_avg_mrg
-    # ncl_avg = ncl_data_avg_avg
-    # ncl_sem = ncl_data_avg_sem
-    # asc_all = asc_data_avg_mrg
-    # asc_avg = asc_data_avg_avg
-    # asc_sem = asc_data_avg_sem
-    # dst_avg = ncl_dst_bin_avg
-    # dst_sem = ncl_dst_bin_sem
-
-    # # Inputs ------------------------------------------------------------------
-
-    # schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
-    # sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
-    # merged = ncl_all["view"].nunique(dropna=False) > 1
-
-    # hline_params = {
-    #     "y" : 1, "color" : "0.75", "zorder" : 0,
-    #     "linewidth" : 1, "linestyle" : ":",
-    #     }
-    
-    # grid_params = {
-    #     "axis" : "x", "color" : "0.75", "zorder" : 0,
-    #     "linewidth" : 1, "linestyle" : ":", 
-    #     }
-
-    # # Nested function(s) ------------------------------------------------------
-    
-    # def _ylim(ax, min_ymax=6):
-    #     _, ymax = ax.get_ylim()
-    #     ax.set_ylim(0, np.maximum(min_ymax, ymax))
-    
-    # def _barplot(
-    #         ax, avg, x, err=None,
-    #         width=0.5, shift=0.0, color="gray"
-    #         ):
-        
-    #     x_pos = np.arange(len(x)) + shift
-    #     ax.bar(
-    #         x_pos, avg, width=width,
-    #         color=color, capsize=5, zorder=2,
-    #         )
-        
-    #     if not err is None:
-    #         ax.errorbar(
-    #             x_pos, avg, yerr=np.vstack([err, err]),
-    #             capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
-    #             )
-            
-    #     ax.axhline(**hline_params)
-    #     ax.grid(**grid_params)
-    
-    # def _boxplot(ax, vals, x, merged=False, color="gray"):
-        
-    #     ax.boxplot(
-    #         vals, positions=[x], widths=0.5, patch_artist=True,
-    #         boxprops=dict(color="0.5", facecolor="none", linewidth=1),
-    #         medianprops=dict(color=color, linewidth=2),
-    #         whiskerprops=dict(color="0.5", linewidth=1),
-    #         capprops=dict(color="0.5", linewidth=1),
-    #         showfliers=False,
-    #         )
-        
-    #     ax.axhline(**hline_params)
-    #     ax.grid(**grid_params)    
-    
-    # def _lineplot(ax, vals, x, color, label):
-    #     ax.plot(x, vals, color=color, label=label)
-    #     ax.grid(**grid_params)
-    
-    # # Execute -----------------------------------------------------------------
-    
-    # # plt.ioff()
-    
-    # # Initialize plot
-    # fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
-    # axes = axes.flatten()
-    
-    # # Main title/info ---------------------------------------------------------
-       
-    # # Main title    
-    # fig.suptitle(
-    #     "Merged views" if merged else ncl_all["view"].iloc[0],
-    #     fontsize=16, fontweight="bold", color="k",
-    #     y=0.92, x=0.025, ha="left",
-    #     )
-
-    # # Secondary text
-    # text = (
-    #     f"n views = {ncl_all['view'].nunique()} | "
-    #     f"n nuclei = {ncl_all['count'].sum():,} | "
-    #     f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
-    #     )
-    # fig.text(
-    #     0.025, 0.89, text,
-    #     fontsize=12, color="0.5",
-    #     ha="left", va="top",
-    #     )
-    
-    # # (0) Class predictions frequency -----------------------------------------
-    
-    # ax = axes[0]
-
-    # for cl, cla in enumerate(main.ncl_classes):
-    #     _barplot(
-    #         ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
-    #         color=main.ncl_colors, 
-    #         )
-        
-    # # Legend
-    # ax.set_ylim(0, 1)
-    # ax.set_ylabel("Frequency")
-    # ax.set_xticks(np.arange(0, len(sclasses)))
-    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    # ax.set_title("Ncl. class pred. freq.", pad=10)
-    
-    # # (1) Class predictions entropy -------------------------------------------
-    
-    # ax = axes[1]
-    
-    # for cl, cla in enumerate(main.ncl_classes):
-    #     vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
-    #     _boxplot(ax, vals, cl, color=main.ncl_colors[cl])
-        
-    # # Legend
-    # ax.set_ylim(0, 1)
-    # ax.set_ylabel("Entropy")
-    # ax.set_xticks(np.arange(0, len(sclasses)))
-    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    # ax.set_title("Ncl. class pred. entropy", pad=10)
-    
-    # # (3) Class ASC intensities -----------------------------------------------
-    
-    # ax = axes[3]
-        
-    # for t, tag in enumerate(["nsp", "spk"]):
-    #     shift = -0.2 if t == 0 else 0.2
-    #     for cl, cla in enumerate(main.ncl_classes):
-    #         _barplot(
-    #             ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
-    #             err=ncl_sem[f"asc_{tag}_int"],
-    #             width=0.3, shift=shift, color=main.ncl_colors, 
-    #             )
-            
-    # ax.text(
-    #     0.5, 0.95, "non-speckle vs. speckle",
-    #     fontsize=10, color="black",
-    #     transform=ax.transAxes,
-    #     horizontalalignment="center",
-    #     verticalalignment="top",
-    #     )
-            
-    # # Legend
-    # _ylim(ax)
-    # ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-    # ax.set_xticks(np.arange(0, len(sclasses)))
-    # ax.set_xticklabels(sclasses, rotation=45, ha="center")
-    # if main.int_norm:
-    #     norm_str = "\n norm. int."
-    # ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
-    
-    # # (4) ASC distance class enrichment ---------------------------------------
-    
-    # ax = axes[4]
-    
-    # for cl, cla in enumerate(main.ncl_classes):
-    #     x = dst_avg["bins"]
-    #     vals = dst_avg[cla + "_asc_nsp_dst"]
-    #     _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
-        
-    # # Legend
-    # ax.set_ylabel("Fold change")
-    # ax.set_xlabel("ASC cluster dist. (pixels)")
-    # ax.set_xticks(x)
-    # if main.int_norm:
-    #     norm_str = "\n norm. dist."
-    # ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
-    
-    # # (5) ASC distance class enrichment ---------------------------------------
-    
-    # ax = axes[5]
-    
-    # for cl, cla in enumerate(main.ncl_classes):
-    #     x = dst_avg["bins"]
-    #     vals = dst_avg[cla + "_asc_spk_dst"]
-    #     _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
-        
-    # # Legend
-    # ax.set_ylabel("Fold change")
-    # ax.set_xlabel("ASC cluster dist. (pixels)")
-    # ax.set_xticks(x)
-    # if main.int_norm:
-    #     norm_str = "\n norm. dist."
-    # ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
-    
-    # # (6 - 11) Channel intensities --------------------------------------------
-    
-    # for cl, cla in enumerate(main.ncl_classes):
-
-    #     ax = axes[cl + 6]                   
-        
-    #     for ch, chn in enumerate(schannels):
-    #         vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
-    #         _boxplot(ax, vals, ch, color=main.ncl_colors[cl])
-                    
-    #     # Legend
-    #     _ylim(ax)
-    #     ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
-    #     ax.set_xticklabels(schannels, rotation=45, ha="center")
-    #     if main.int_norm:
-    #         norm_str = "\nnorm. int."
-    #     ax.set_title(cla + norm_str, pad=10)
-    
-    # # -------------------------------------------------------------------------
-    
-    # plt.tight_layout(rect=[0, 0, 1, 0.9])
-    # # plt.close(fig) 
-    # # plt.ion()
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    # plt.close(fig) 
+    # plt.ion()

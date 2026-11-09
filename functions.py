@@ -378,7 +378,7 @@ def get_obj_crops(stk, ys, xs, crop_size=32, crop_fraction=None):
 #%% function(s) : get_ncl_intensities() ---------------------------------------
 
 def get_ncl_intensities(
-        stk_nrm, ncl_prp, asc_prp, asc_msk, channels, 
+        stk_nrm, ncl_prp, asc_msk, channels, 
         crop_size=32, normalize=True, 
         stk_level=1, pixel_size=0.5
         ):
@@ -400,7 +400,7 @@ def get_ncl_intensities(
     stk_nrm = np.delete(stk_nrm, obj=4, axis=0)
     stk_nrm = np.concatenate((
         stk_nrm, np.stack([
-            asc_nrm * (asc_msk  > 0),
+            asc_nrm * ((asc_msk > 0) & (asc_msk < 3)),
             asc_nrm * (asc_msk == 1),
             asc_nrm * (asc_msk == 2),
             ])), axis=0)
@@ -441,9 +441,12 @@ def get_ncl_distances(asc_msk, ncl_prp, stk_level=1, pixel_size=0.5):
     
     # Run 
     sfactor = get_sfactor(stk_level, 0, ndim=1, pixel_size=pixel_size)
-    ncl_dst["asc_all_dst"] = _get_ncl_distances(asc_msk  > 0, sfactor)
-    ncl_dst["asc_spk_dst"] = _get_ncl_distances(asc_msk == 1, sfactor)
-    ncl_dst["asc_nsp_dst"] = _get_ncl_distances(asc_msk == 2, sfactor)
+    ncl_dst["asc_all_dst"] = _get_ncl_distances(
+        (asc_msk > 0) & (asc_msk < 3), sfactor)
+    ncl_dst["asc_spk_dst"] = _get_ncl_distances(
+        asc_msk == 1, sfactor)
+    ncl_dst["asc_nsp_dst"] = _get_ncl_distances(
+        asc_msk == 2, sfactor)
     
     return ncl_dst
 
@@ -535,11 +538,12 @@ def get_asc_stats(
     asc_sts = {}
     spk_idx = np.where(asc_cls["class"] == 0)[0]
     nsp_idx = np.where(asc_cls["class"] == 1)[0]
+    all_idx = np.union1d(spk_idx, nsp_idx)
     sfactor = get_sfactor(pvw_level, 0, ndim=2, pixel_size=pixel_size)
         
     # Areas
     tissue_area = np.sum(pvw_msk > 0) * sfactor
-    asc_all_area = np.sum(asc_prp["area"])
+    asc_all_area = np.sum(asc_prp["area"][all_idx])
     asc_spk_area = np.sum(asc_prp["area"][spk_idx])
     asc_nsp_area = np.sum(asc_prp["area"][nsp_idx])
     asc_all_area_ratio = asc_all_area / tissue_area
@@ -548,9 +552,9 @@ def get_asc_stats(
     
     # Counts
     ncl_num = len(ncl_prp["y"])
-    asc_all_num = len(asc_prp["y"])        
-    asc_spk_num = (asc_cls["class"] == 0).sum()
-    asc_nsp_num = (asc_cls["class"] == 1).sum()
+    asc_all_num = len(all_idx)        
+    asc_spk_num = len(spk_idx)
+    asc_nsp_num = len(nsp_idx)
     asc_all_num_ratio = asc_all_num / ncl_num
     asc_spk_num_ratio = asc_spk_num / ncl_num
     asc_nsp_num_ratio = asc_nsp_num / ncl_num
@@ -603,15 +607,19 @@ def format_ncl_data(ncl_prp, ncl_cls, ncl_int, ncl_dst, vws_path):
 
 def format_asc_data(asc_prp, asc_cls, vws_path):
     
-    n = len(asc_prp["y"])
+    spk_idx = np.where(asc_cls["class"] == 0)[0]
+    nsp_idx = np.where(asc_cls["class"] == 1)[0]
+    all_idx = np.union1d(spk_idx, nsp_idx)
+    
+    n = len(all_idx)
     asc_data = {
         "view"         : [vws_path.name] * n,
-        "y"            : asc_prp["y"],
-        "x"            : asc_prp["x"],
-        "area"         : asc_prp["area"],
-        "eccentricity" : asc_prp["eccentricity"],
-        "class"        : asc_cls["class"],
-        "entropy"      : asc_cls["entropy"],
+        "y"            : asc_prp["y"][all_idx],
+        "x"            : asc_prp["x"][all_idx],
+        "area"         : asc_prp["area"][all_idx],
+        "eccentricity" : asc_prp["eccentricity"][all_idx],
+        "class"        : asc_cls["class"][all_idx],
+        "entropy"      : asc_cls["entropy"][all_idx],
         }
     
     return pd.DataFrame(asc_data)
@@ -654,6 +662,9 @@ def average_data(data, classes, vws_path):
     # Execute -----------------------------------------------------------------
 
     # Group per class
+    if classes[0] == "Speckle":
+        classes = classes.copy()
+        classes.remove("Non-valid")
     dat = data.drop(columns=["x", "y"], errors="ignore")
     grp = dat.groupby("class", sort=True)
         
@@ -671,8 +682,8 @@ def average_data(data, classes, vws_path):
         std_ = _average_data(grp, method="std")
         sem_ = _average_data(grp, method="sem")
         avg = pd.concat([avg_, avg], ignore_index=True)
-        std = pd.concat([std_, avg], ignore_index=True)
-        sem = pd.concat([sem_, avg], ignore_index=True)
+        std = pd.concat([std_, std], ignore_index=True)
+        sem = pd.concat([sem_, sem], ignore_index=True)
         
     return avg, std, sem
 

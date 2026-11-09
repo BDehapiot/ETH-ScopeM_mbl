@@ -46,7 +46,7 @@ model_parameters = {
     # "backbone"           : "resnet18",
     
     # cls
-    "filters"            : [16, 32],
+    "filters"            : [16, 32, 64, 128],
     "n_classes"          : 3,
     "classes"            : ["Speckle", "Non-speckle", "Non-valid"],
     "glob_avg_pool"      : False,
@@ -59,14 +59,14 @@ model_parameters = {
     
     # Prepare -----------------------------------------------------------------
     
-    "patch_size"         : 24,
+    "patch_size"         : 48,
     "patch_overlap"      : 0,
 
     # Train -------------------------------------------------------------------
     
     "display"            : 0,
     "epochs"             : 2048,
-    "batch_size"         : 32,
+    "batch_size"         : 16,
     "validation_split"   : 0.2,
     "learning_rate"      : 0.0001,
     "patience"           : 512,
@@ -262,4 +262,3 @@ if __name__ == "__main__":
     main = Main(parameters=main_parameters)
     train = TrainASCClasses(
         main, parameters=parameters, model_parameters=model_parameters)  
-    asc_crp = train.asc_crp
