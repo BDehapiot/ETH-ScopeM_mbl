@@ -3,6 +3,7 @@
 import tifffile
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 from qptifffile import QPTiffFile
 import xml.etree.ElementTree as ET
 
@@ -687,7 +688,520 @@ def average_data(data, classes, vws_path):
         
     return avg, std, sem
 
-#%% function(s) : plot --------------------------------------------------------
+#%% function(s) : get_plot() --------------------------------------------------
+
+def get_plot(
+    ncl_all, ncl_avg, ncl_sem,
+    asc_all, asc_avg, asc_sem, 
+    dst_avg, dst_sem, asc_sts,
+    ncl_classes, ncl_colors, int_norm,
+    ):
+    
+    # Inputs ------------------------------------------------------------------
+
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = ncl_all["view"].nunique(dropna=False) > 1
+
+    hline_params = {
+        "y" : 1, "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":",
+        }
+    
+    grid_params = {
+        "axis" : "x", "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":", 
+        }
+
+    # Nested function(s) ------------------------------------------------------
+    
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    
+    def _barplot(
+            ax, avg, x, err=None,
+            width=0.5, shift=0.0, color="gray"
+            ):
+        
+        x_pos = np.arange(len(x)) + shift
+        ax.bar(
+            x_pos, avg, width=width,
+            color=color, capsize=5, zorder=2,
+            )
+        
+        if not err is None:
+            ax.errorbar(
+                x_pos, avg, yerr=np.vstack([err, err]),
+                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+                )
+            
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+    
+    def _boxplot(ax, vals, x, merged=False, color="gray"):
+        
+        ax.boxplot(
+            vals, positions=[x], widths=0.5, patch_artist=True,
+            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
+            medianprops=dict(color="0.5", linewidth=1),
+            whiskerprops=dict(color="0.5", linewidth=1),
+            capprops=dict(color="0.5", linewidth=1),
+            showfliers=False,
+            )
+        
+        # Add dots
+        x_jittered = x + np.random.normal(0, 0.08, size=len(vals))
+        
+        ax.scatter(
+            x_jittered, vals,
+            color=color, alpha=0.75, s=10, edgecolors="none",
+            )
+        
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)    
+    
+    def _lineplot(ax, vals, x, color, label):
+        ax.plot(x, vals, color=color, label=label)
+        ax.grid(**grid_params)
+    
+    # Execute -----------------------------------------------------------------
+    
+    # plt.ioff()
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
+    axes = axes.flatten()
+    
+    # Main title/info ---------------------------------------------------------
+       
+    # Main title    
+    fig.suptitle(
+        "Merged views" if merged else ncl_all["view"].iloc[0],
+        fontsize=16, fontweight="bold", color="k",
+        y=0.92, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n views = {ncl_all['view'].nunique()} | "
+        f"n nuclei = {ncl_all['count'].sum():,} | "
+        f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
+        )
+    fig.text(
+        0.025, 0.89, text,
+        fontsize=12, color="0.5",
+        ha="left", va="top",
+        )
+    
+    # (0) Class predictions frequency -----------------------------------------
+    
+    ax = axes[0]
+
+    for cl, cla in enumerate(ncl_classes):
+        _barplot(
+            ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
+            color=ncl_colors, 
+            )
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. freq.", pad=10)
+    
+    # (1) Class predictions entropy -------------------------------------------
+    
+    ax = axes[1]
+    
+    for cl, cla in enumerate(ncl_classes):
+        vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
+        _boxplot(ax, vals, cl, color=ncl_colors[cl])
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Entropy")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. entropy", pad=10)
+    
+    # (2) ASC statistics ------------------------------------------------------ 
+    
+    ax = axes[2]
+    
+    tags = ["nsp_area", "spk_area", "nsp_num", "spk_num"]
+    for t, tag in enumerate(tags):
+        _boxplot(ax, asc_sts[f"asc_{tag}_ratio"], t, color="gray")
+        if t in [1, 3]:
+            if t == 1: label = "area ratio"
+            if t == 3: label = "numb ratio"
+            ax.text(
+                t - 0.5, 0.095, label,
+                fontsize=10, color="black",
+                horizontalalignment="center",
+                verticalalignment="top",
+                )
+        
+    # Legend
+    ax.set_ylim(0, 0.10)
+    ax.set_ylabel("ratio")
+    ax.set_xticks(np.arange(0, len(tags)))
+    ax.set_xticklabels(
+        ["non\nspk", "spk", "non\nspk", "spk"], 
+        rotation=45, ha="center",
+        )
+    ax.set_title("ASC statistics", pad=10)
+        
+    # (3) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[3]
+        
+    for t, tag in enumerate(["nsp", "spk"]):
+        shift = -0.2 if t == 0 else 0.2
+        for cl, cla in enumerate(ncl_classes):
+            _barplot(
+                ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
+                err=ncl_sem[f"asc_{tag}_int"],
+                width=0.3, shift=shift, color=ncl_colors, 
+                )
+            
+    ax.text(
+        0.5, 0.95, "non-speckle vs. speckle",
+        fontsize=10, color="black",
+        transform=ax.transAxes,
+        horizontalalignment="center",
+        verticalalignment="top",
+        )
+            
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    if int_norm:
+        norm_str = "\n norm. int."
+    ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
+    
+    # (4) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[4]
+    
+    for cl, cla in enumerate(ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_nsp_dst"]
+        _lineplot(ax, vals, x, ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (5) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[5]
+    
+    for cl, cla in enumerate(ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_spk_dst"]
+        _lineplot(ax, vals, x, ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (6 - 11) Channel intensities --------------------------------------------
+    
+    for cl, cla in enumerate(ncl_classes):
+
+        ax = axes[cl + 6]                   
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
+            _boxplot(ax, vals, ch, color=ncl_colors[cl])
+                    
+        # Legend
+        _ylim(ax)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        if int_norm:
+            norm_str = "\nnorm. int."
+        ax.set_title(cla + norm_str, pad=10)
+    
+    # -------------------------------------------------------------------------
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    # plt.close(fig) 
+    # plt.ion()
+    
+    pass
+
+#%%
+
+    import matplotlib.pyplot as plt
+
+    # -------------------------------------------------------------------------
+
+    ncl_all = ncl_data_avg_mrg
+    ncl_avg = ncl_data_avg_avg
+    ncl_sem = ncl_data_avg_sem
+    asc_all = asc_data_avg_mrg
+    asc_avg = asc_data_avg_avg
+    asc_sem = asc_data_avg_sem
+    dst_avg = ncl_dst_bin_avg
+    dst_sem = ncl_dst_bin_sem
+    asc_sts = asc_sts_mrg
+
+    # Inputs ------------------------------------------------------------------
+
+    schannels = ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"]
+    sclasses = ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"]
+    merged = ncl_all["view"].nunique(dropna=False) > 1
+
+    hline_params = {
+        "y" : 1, "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":",
+        }
+    
+    grid_params = {
+        "axis" : "x", "color" : "0.75", "zorder" : 0,
+        "linewidth" : 1, "linestyle" : ":", 
+        }
+
+    # Nested function(s) ------------------------------------------------------
+    
+    def _ylim(ax, min_ymax=6):
+        _, ymax = ax.get_ylim()
+        ax.set_ylim(0, np.maximum(min_ymax, ymax))
+    
+    def _barplot(
+            ax, avg, x, err=None,
+            width=0.5, shift=0.0, color="gray"
+            ):
+        
+        x_pos = np.arange(len(x)) + shift
+        ax.bar(
+            x_pos, avg, width=width,
+            color=color, capsize=5, zorder=2,
+            )
+        
+        if not err is None:
+            ax.errorbar(
+                x_pos, avg, yerr=np.vstack([err, err]),
+                capsize=3, elinewidth=0.5, ecolor="0.5", fmt="none",
+                )
+            
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)
+    
+    def _boxplot(ax, vals, x, merged=False, color="gray"):
+        
+        ax.boxplot(
+            vals, positions=[x], widths=0.5, patch_artist=True,
+            boxprops=dict(color="0.5", facecolor="none", linewidth=1),
+            medianprops=dict(color="0.5", linewidth=1),
+            whiskerprops=dict(color="0.5", linewidth=1),
+            capprops=dict(color="0.5", linewidth=1),
+            showfliers=False,
+            )
+        
+        # Add dots
+        x_jittered = x + np.random.normal(0, 0.08, size=len(vals))
+        
+        ax.scatter(
+            x_jittered, vals,
+            color=color, alpha=0.75, s=10, edgecolors="none",
+            )
+        
+        ax.axhline(**hline_params)
+        ax.grid(**grid_params)    
+    
+    def _lineplot(ax, vals, x, color, label):
+        ax.plot(x, vals, color=color, label=label)
+        ax.grid(**grid_params)
+    
+    # Execute -----------------------------------------------------------------
+    
+    # plt.ioff()
+    
+    # Initialize plot
+    fig, axes = plt.subplots(nrows=4, ncols=3, figsize=(8, 12))
+    axes = axes.flatten()
+    
+    # Main title/info ---------------------------------------------------------
+       
+    # Main title    
+    fig.suptitle(
+        "Merged views" if merged else ncl_all["view"].iloc[0],
+        fontsize=16, fontweight="bold", color="k",
+        y=0.92, x=0.025, ha="left",
+        )
+
+    # Secondary text
+    text = (
+        f"n views = {ncl_all['view'].nunique()} | "
+        f"n nuclei = {ncl_all['count'].sum():,} | "
+        f"avg. entropy = {ncl_all['entropy'].mean():.3f}"
+        )
+    fig.text(
+        0.025, 0.89, text,
+        fontsize=12, color="0.5",
+        ha="left", va="top",
+        )
+    
+    # (0) Class predictions frequency -----------------------------------------
+    
+    ax = axes[0]
+
+    for cl, cla in enumerate(main.ncl_classes):
+        _barplot(
+            ax, ncl_avg["freq"], sclasses, err=ncl_sem["freq"], 
+            color=main.ncl_colors, 
+            )
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Frequency")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. freq.", pad=10)
+    
+    # (1) Class predictions entropy -------------------------------------------
+    
+    ax = axes[1]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        vals = np.array(ncl_all[ncl_all["class"] == cla]["entropy"])
+        _boxplot(ax, vals, cl, color=main.ncl_colors[cl])
+        
+    # Legend
+    ax.set_ylim(0, 1)
+    ax.set_ylabel("Entropy")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    ax.set_title("Ncl. class pred. entropy", pad=10)
+    
+    # (2) ASC statistics ------------------------------------------------------ 
+    
+    ax = axes[2]
+    
+    tags = ["nsp_area", "spk_area", "nsp_num", "spk_num"]
+    for t, tag in enumerate(tags):
+        _boxplot(ax, asc_sts[f"asc_{tag}_ratio"], t, color="gray")
+        if t in [1, 3]:
+            if t == 1: label = "area ratio"
+            if t == 3: label = "numb ratio"
+            ax.text(
+                t - 0.5, 0.095, label,
+                fontsize=10, color="black",
+                horizontalalignment="center",
+                verticalalignment="top",
+                )
+        
+    # Legend
+    ax.set_ylim(0, 0.10)
+    ax.set_ylabel("ratio")
+    ax.set_xticks(np.arange(0, len(tags)))
+    ax.set_xticklabels(
+        ["non\nspk", "spk", "non\nspk", "spk"], 
+        rotation=45, ha="center",
+        )
+    ax.set_title("ASC statistics", pad=10)
+        
+    # (3) Class ASC intensities -----------------------------------------------
+    
+    ax = axes[3]
+        
+    for t, tag in enumerate(["nsp", "spk"]):
+        shift = -0.2 if t == 0 else 0.2
+        for cl, cla in enumerate(main.ncl_classes):
+            _barplot(
+                ax, ncl_avg[f"asc_{tag}_int"], sclasses, 
+                err=ncl_sem[f"asc_{tag}_int"],
+                width=0.3, shift=shift, color=main.ncl_colors, 
+                )
+            
+    ax.text(
+        0.5, 0.95, "non-speckle vs. speckle",
+        fontsize=10, color="black",
+        transform=ax.transAxes,
+        horizontalalignment="center",
+        verticalalignment="top",
+        )
+            
+    # Legend
+    _ylim(ax)
+    ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+    ax.set_xticks(np.arange(0, len(sclasses)))
+    ax.set_xticklabels(sclasses, rotation=45, ha="center")
+    if main.int_norm:
+        norm_str = "\n norm. int."
+    ax.set_title(f"Ncl. ASC int.{norm_str}", pad=10)
+    
+    # (4) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[4]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_nsp_dst"]
+        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if main.int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Non-speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (5) ASC distance class enrichment ---------------------------------------
+    
+    ax = axes[5]
+    
+    for cl, cla in enumerate(main.ncl_classes):
+        x = dst_avg["bins"]
+        vals = dst_avg[cla + "_asc_spk_dst"]
+        _lineplot(ax, vals, x, main.ncl_colors[cl], cla)
+        
+    # Legend
+    ax.set_ylabel("Fold change")
+    ax.set_xlabel("ASC cluster dist. (pixels)")
+    ax.set_xticks(x)
+    if main.int_norm:
+        norm_str = "\n norm. dist."
+    ax.set_title(f"Speckle dist. to ncl.{norm_str}", pad=10)
+    
+    # (6 - 11) Channel intensities --------------------------------------------
+    
+    for cl, cla in enumerate(main.ncl_classes):
+
+        ax = axes[cl + 6]                   
+        
+        for ch, chn in enumerate(schannels):
+            vals = np.array(ncl_all[ncl_all["class"] == cla][f"{chn}_int"])
+            _boxplot(ax, vals, ch, color=main.ncl_colors[cl])
+                    
+        # Legend
+        _ylim(ax)
+        ax.set_ylabel("Mean Norm. Fluo. Int. (A.U.)")
+        ax.set_xticklabels(schannels, rotation=45, ha="center")
+        if main.int_norm:
+            norm_str = "\nnorm. int."
+        ax.set_title(cla + norm_str, pad=10)
+    
+    # -------------------------------------------------------------------------
+    
+    plt.tight_layout(rect=[0, 0, 1, 0.9])
+    # plt.close(fig) 
+    # plt.ion()
 
 #%% function(s) : pad_images() ------------------------------------------------
 
