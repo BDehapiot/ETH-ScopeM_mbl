@@ -32,7 +32,7 @@ parameters = {
     
     # Extract -----------------------------------------------------------------
     
-    "n_patches"             : 10,
+    "n_patches"             : 10, # save n_patches per preview image
     "extract_patch_size"    : 256,
     "extract_patch_overlap" : 128,
     
@@ -233,7 +233,6 @@ class TrainASC:
         
         # Load data
         msk_paths = list(self.train_path.glob("*_mask.tif"))
-        msk_paths += list((self.train_path / "stock_in").glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))

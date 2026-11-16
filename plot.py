@@ -79,15 +79,16 @@ class Plot:
             ):
         
         linecolor = "0.5"
-        mediancolor = "0.5" if add_dots else color
+        linewidth = 0.75
+        mediancolor = linecolor if add_dots else color
         medianwidth = 1 if add_dots else 2
         
         ax.boxplot(
             y, positions=[x], widths=0.5, patch_artist=True,
-            boxprops=dict(color=linecolor, facecolor="none", linewidth=1),
+            boxprops=dict(color=linecolor, facecolor="none", linewidth=linewidth),
             medianprops=dict(color=mediancolor, linewidth=medianwidth),
-            whiskerprops=dict(color=linecolor, linewidth=1),
-            capprops=dict(color=linecolor, linewidth=1),
+            whiskerprops=dict(color=linecolor, linewidth=linewidth),
+            capprops=dict(color=linecolor, linewidth=linewidth),
             showfliers=False,
             )
         

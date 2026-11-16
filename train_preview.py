@@ -213,7 +213,6 @@ class TrainPreview:
         
         # Load data
         msk_paths = list(self.train_path.glob("*_mask.tif"))
-        msk_paths += list((self.train_path / "stock_in").glob("*_mask.tif"))
         msks, imgs = [], []
         for path in msk_paths:
             msks.append(io.imread(path))

@@ -81,10 +81,9 @@ class Display:
         stk_nrm_path = vws_path / "stack_norm.tif"
         ncl_prp_path = vws_path / "nuclei_properties.pkl"
         ncl_cls_path = vws_path / "nuclei_classes.pkl"
-        # ncl_plt_path = vws_path / "nuclei_plot.pkl"
         asc_prp_path = vws_path / "asc_properties.pkl"
         asc_cls_path = vws_path / "asc_classes.pkl"
-        # asc_plt_path = vws_path / "asc_plot.pkl"
+        plt_path = vws_path / "plot.png"
         
         # Load
         with open(ncl_prp_path, "rb") as file:
@@ -114,9 +113,9 @@ class Display:
             shape=self.stk_nrm[0, ...].shape
             )
         
-        # self.ncl_plt = QPixmap(str(ncl_plt_path))
-        # self.ncl_plt = self.ncl_plt.scaledToWidth(
-        #     int(self.dock_width / 1.75), Qt.SmoothTransformation)
+        self.plt = QPixmap(str(plt_path))
+        self.plt = self.plt.scaledToWidth(
+            int(self.dock_width / 1.75), Qt.SmoothTransformation)
         
     def auto_contrast(self):
         img = self.vwr.layers["stk_nrm"].data 
@@ -132,7 +131,7 @@ class Display:
         self.vwr.layers["pvw_msk"].data = self.pvw_msk
         self.vwr.layers["ncl_msk"].data = self.ncl_msk
         self.vwr.layers["asc_msk"].data = self.asc_msk
-        # self.plt_label.setPixmap(self.ncl_plt)
+        self.plt_label.setPixmap(self.plt)
         self.update_ncl_class()
         self.auto_contrast()
     
@@ -330,7 +329,7 @@ class Display:
         
         # ///
         
-        # self.plt_label.setPixmap(self.ncl_plt)
+        self.plt_label.setPixmap(self.plt)
         self.update_ncl_class()
         self.auto_contrast()
 

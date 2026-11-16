@@ -75,11 +75,14 @@ main_parameters = {
     "pixel_size"            : 0.5,  # in µm at level = 0
     "int_crop_size"         : 16,   # in µm at level = 0
     "int_norm"              : True, # normalize fluo. int. (per channel)
-    
-    # Analyse()
     "dst_bin_size"          : 4,    # in µm at level = 0
     "dst_bin_max"           : 32,   # in µm at level = 0
     "dst_norm"              : True, # normalize distances (per class)
+    
+    # Analyse()
+    "skip_views" : [
+        "251127_D2_S2_Scan1_unmixed_01",
+        ], 
     
     # Maps  -------------------------------------------------------------------
     
@@ -697,18 +700,15 @@ class Main:
             ncl_cls_path = vws_path / "nuclei_classes.pkl" 
             asc_prp_path = vws_path / "asc_properties.pkl"  
             asc_cls_path = vws_path / "asc_classes.pkl"  
-
             ncl_int_path = vws_path / "nuclei_intensities.pkl" 
             ncl_dst_path = vws_path / "nuclei_distances.pkl"
             
             ncl_dst_bin_path = vws_path / "nuclei_distances_bin.csv"
             asc_sts_path = vws_path / "asc_stats.csv"
-
             ncl_data_path = vws_path / "nuclei_data.csv"
             ncl_data_avg_path = vws_path / "nuclei_data_avg.csv"
             ncl_data_std_path = vws_path / "nuclei_data_std.csv"
             ncl_data_sem_path = vws_path / "nuclei_data_sem.csv"
-
             asc_data_path = vws_path / "asc_data.csv"
             asc_data_avg_path = vws_path / "asc_data_avg.csv"
             asc_data_std_path = vws_path / "asc_data_std.csv"
@@ -835,45 +835,16 @@ class Main:
                 
                 ncl_dst_bin.to_csv(ncl_dst_bin_path, index=False)
                 asc_sts.to_csv(asc_sts_path, index=False)
-                
                 ncl_data.to_csv(ncl_data_path, index=False)
                 ncl_data_avg.to_csv(ncl_data_avg_path, index=False)
                 ncl_data_std.to_csv(ncl_data_std_path, index=False)
                 ncl_data_sem.to_csv(ncl_data_sem_path, index=False)
-                
                 asc_data.to_csv(asc_data_path, index=False)
                 asc_data_avg.to_csv(asc_data_avg_path, index=False)
                 asc_data_std.to_csv(asc_data_std_path, index=False)
                 asc_data_sem.to_csv(asc_data_sem_path, index=False)
                 
                 plot.fig.savefig(plot_path, dpi=300, bbox_inches="tight")
-                    
-                # ///
-                
-                self.vws_path = vws_path 
-                self.stk_nrm  = stk_nrm
-                self.ncl_prp  = ncl_prp
-                self.ncl_cls  = ncl_cls
-                self.asc_prp  = asc_prp
-                self.asc_cls  = asc_cls
-                self.asc_msk  = asc_msk
-                
-                self.ncl_int  = ncl_int
-                self.ncl_dst  = ncl_dst
-                self.ncl_dst_bin = ncl_dst_bin
-                self.asc_sts  = asc_sts
-                
-                self.ncl_data = ncl_data
-                self.ncl_data_avg  = ncl_data_avg
-                self.ncl_data_std  = ncl_data_std
-                self.ncl_data_sem  = ncl_data_sem
-                
-                self.asc_data = asc_data
-                self.asc_data_avg  = asc_data_avg
-                self.asc_data_std  = asc_data_std
-                self.asc_data_sem  = asc_data_sem
-                
-                # ///
                 
                 # Clear
                 del (
@@ -910,7 +881,6 @@ class Main:
             ncl_data_avg_avg_path = self.data_path / "nuclei_data_avg_avg.csv"
             ncl_data_avg_std_path = self.data_path / "nuclei_data_avg_std.csv"
             ncl_data_avg_sem_path = self.data_path / "nuclei_data_avg_sem.csv"
-            
             asc_data_avg_mrg_path = self.data_path / "asc_data_avg_merged.csv"
             asc_data_avg_avg_path = self.data_path / "asc_data_avg_avg.csv"
             asc_data_avg_std_path = self.data_path / "asc_data_avg_std.csv"
@@ -919,12 +889,11 @@ class Main:
             asc_sts_avg_path = self.data_path / "asc_stats_avg.csv"
             asc_sts_std_path = self.data_path / "asc_stats_std.csv"
             asc_sts_sem_path = self.data_path / "asc_stats_sem.csv"
-            
             ncl_dst_bin_avg_path = self.data_path / "nuclei_distances_bin_avg.csv"
             ncl_dst_bin_std_path = self.data_path / "nuclei_distances_bin_std.csv"
             ncl_dst_bin_sem_path = self.data_path / "nuclei_distances_bin_sem.csv"
             
-            plot_path = self.data_path / "merged_plot.png"
+            plot_path = self.data_path / "plot_merged.png"
             
             # Load & format/avg. data -----------------------------------------
             
@@ -933,27 +902,23 @@ class Main:
             ncl_data_avg_mrg, asc_data_avg_mrg, asc_sts_mrg = [], [], []
             for p, vws_path in enumerate(self.vws_paths):
                 
-                # Paths
-                ncl_data_avg_path = vws_path / "nuclei_data_avg.csv"
-                asc_data_avg_path = vws_path / "asc_data_avg.csv"
-                asc_sts_path = vws_path / "asc_stats.csv" 
-    
-                # Load
-                ncl_data_avg_mrg.append(pd.read_csv(ncl_data_avg_path))
-                asc_data_avg_mrg.append(pd.read_csv(asc_data_avg_path))
-                asc_sts_mrg.append(pd.read_csv(asc_sts_path))
+                if not vws_path.name in self.skip_views:
+                
+                    # Paths
+                    ncl_data_avg_path = vws_path / "nuclei_data_avg.csv"
+                    asc_data_avg_path = vws_path / "asc_data_avg.csv"
+                    asc_sts_path = vws_path / "asc_stats.csv" 
+        
+                    # Load
+                    ncl_data_avg_mrg.append(pd.read_csv(ncl_data_avg_path))
+                    asc_data_avg_mrg.append(pd.read_csv(asc_data_avg_path))
+                    asc_sts_mrg.append(pd.read_csv(asc_sts_path))
                 
             # Concatenate
             ncl_data_avg_mrg = pd.concat(ncl_data_avg_mrg, ignore_index=True)
             asc_data_avg_mrg = pd.concat(asc_data_avg_mrg, ignore_index=True)
             asc_sts_mrg = pd.concat(asc_sts_mrg, ignore_index=True)
-            
-            # ///
-            
-            self.asc_sts_mrg = asc_sts_mrg
-            
-            # ///
-            
+                        
             # Class avg. data
             ncl_data_avg_avg, ncl_data_avg_std, ncl_data_avg_sem = average_data(
                 ncl_data_avg_mrg, self.ncl_classes, vws_path)
@@ -971,33 +936,16 @@ class Main:
             ncl_dst_bin_mrg = []
             for p, vws_path in enumerate(self.vws_paths):
                 
-                # Paths
-                ncl_cls_path = vws_path / "nuclei_classes.pkl"
-                ncl_dst_bin_path = vws_path / "nuclei_distances_bin.csv"
+                if not vws_path.name in self.skip_views:
                 
-                # Load
-                with open(ncl_cls_path, "rb") as file: 
-                    ncl_cls = pickle.load(file)
-                ncl_dst_bin_mrg.append(pd.read_csv(ncl_dst_bin_path))
-                
-                # ///
-                
-                self.ncl_cls = ncl_cls
-                self.ncl_dst_bin_mrg = ncl_dst_bin_mrg
-                
-                # ///
+                    # Paths
+                    ncl_dst_bin_path = vws_path / "nuclei_distances_bin.csv"
+                    
+                    # Load
+                    ncl_dst_bin_mrg.append(pd.read_csv(ncl_dst_bin_path))
                 
             ncl_dst_bin_avg, ncl_dst_bin_std, ncl_dst_bin_sem = (
-                average_ncl_distances_bin(ncl_dst_bin_mrg))
-            
-            # ///
-            
-            self.ncl_dst_bin_mrg = ncl_dst_bin_mrg
-            self.ncl_dst_bin_avg = ncl_dst_bin_avg
-            self.ncl_dst_bin_std = ncl_dst_bin_std
-            self.ncl_dst_bin_sem = ncl_dst_bin_sem
-            
-            # ///     
+                average_ncl_distances_bin(ncl_dst_bin_mrg))   
             
             t1 = time.time()
             print(f"{t1 - t0:.3f}s - bin ncl distances")
@@ -1010,11 +958,11 @@ class Main:
                 ncl_data_avg_std, ncl_data_avg_sem,
                 asc_data_avg_mrg, asc_data_avg_avg, 
                 asc_data_avg_std, asc_data_avg_sem,
-                ncl_dst_bin_avg, asc_sts_avg,
-                asc_sts_avg_avg=None,
-                asc_sts_avg_std=None,
-                asc_sts_avg_sem=None,
-                merged=False,
+                ncl_dst_bin_avg, asc_sts_mrg,
+                asc_sts_avg=asc_sts_avg,
+                asc_sts_std=asc_sts_std,
+                asc_sts_sem=asc_sts_sem,
+                merged=True,
                 )
             
             # Save ------------------------------------------------------------
@@ -1025,7 +973,6 @@ class Main:
             ncl_data_avg_avg.to_csv(ncl_data_avg_avg_path, index=False)
             ncl_data_avg_std.to_csv(ncl_data_avg_std_path, index=False)
             ncl_data_avg_sem.to_csv(ncl_data_avg_sem_path, index=False)
-            
             asc_data_avg_mrg.to_csv(asc_data_avg_mrg_path, index=False)
             asc_data_avg_avg.to_csv(asc_data_avg_avg_path, index=False)
             asc_data_avg_std.to_csv(asc_data_avg_std_path, index=False)
@@ -1034,7 +981,6 @@ class Main:
             asc_sts_avg.to_csv(asc_sts_avg_path, index=False)
             asc_sts_std.to_csv(asc_sts_std_path, index=False)
             asc_sts_sem.to_csv(asc_sts_sem_path, index=False)
-            
             ncl_dst_bin_avg.to_csv(ncl_dst_bin_avg_path)
             ncl_dst_bin_std.to_csv(ncl_dst_bin_std_path)
             ncl_dst_bin_sem.to_csv(ncl_dst_bin_sem_path)
@@ -1046,71 +992,8 @@ class Main:
             
             t1f = time.time()
             print(f"> {t1f - t0i:.3f}s")
-            
-            # ///
-                        
-            self.ncl_data_avg_mrg = ncl_data_avg_mrg
-            self.ncl_data_avg_avg = ncl_data_avg_avg
-            self.ncl_data_avg_std = ncl_data_avg_std
-            self.ncl_data_avg_sem = ncl_data_avg_sem
-            self.asc_data_avg_mrg = asc_data_avg_mrg
-            self.asc_data_avg_avg = asc_data_avg_avg
-            self.asc_data_avg_std = asc_data_avg_std
-            self.asc_data_avg_sem = asc_data_avg_sem
-            self.asc_sts_mrg = asc_sts_mrg
-            self.asc_sts_avg = asc_sts_avg
-            self.asc_sts_std = asc_sts_std
-            self.asc_sts_sem = asc_sts_sem
-            
-            # ///
    
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)  
-    
-    # vws_path = main.vws_path
-    # pvw_msk  = main.pvw_msk
-    # stk_nrm  = main.stk_nrm
-    
-    # ncl_prp  = main.ncl_prp
-    # ncl_cls  = main.ncl_cls
-    # asc_prp  = main.asc_prp
-    # asc_cls  = main.asc_cls
-    # asc_msk  = main.asc_msk
-    
-    # ncl_int  = main.ncl_int
-    # ncl_dst  = main.ncl_dst
-    # ncl_dst_bin  = main.ncl_dst_bin
-    # asc_sts  = main.asc_sts
-    
-    # ncl_data = main.ncl_data
-    # ncl_data_avg = main.ncl_data_avg
-    # ncl_data_std = main.ncl_data_std
-    # ncl_data_sem = main.ncl_data_sem
-    # asc_data = main.asc_data
-    # asc_data_avg = main.asc_data_avg
-    # asc_data_std = main.asc_data_std
-    # asc_data_sem = main.asc_data_sem
-
-    # asc_sts_mrg = main.asc_sts_mrg
-    # ncl_data_avg_mrg = main.ncl_data_avg_mrg
-    # ncl_data_avg_avg = main.ncl_data_avg_avg
-    # ncl_data_avg_std = main.ncl_data_avg_std
-    # ncl_data_avg_sem = main.ncl_data_avg_sem
-    # asc_data_avg_mrg = main.asc_data_avg_mrg
-    # asc_data_avg_avg = main.asc_data_avg_avg
-    # asc_data_avg_std = main.asc_data_avg_std
-    # asc_data_avg_sem = main.asc_data_avg_sem
-    
-    # ncl_dst_bin = main.ncl_dst_bin
-    # ncl_dst_bin_mrg = main.ncl_dst_bin_mrg
-    # ncl_dst_bin_avg = main.ncl_dst_bin_avg
-    # ncl_dst_bin_std = main.ncl_dst_bin_std
-    # ncl_dst_bin_sem = main.ncl_dst_bin_sem
-    # asc_sts_mrg = main.asc_sts_mrg
-        
-    # # Display
-    # import napari
-    # vwr = napari.Viewer()
-    # vwr.add_image(asc_msk)
+    main = Main(parameters=main_parameters)
