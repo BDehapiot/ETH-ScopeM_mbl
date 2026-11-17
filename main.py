@@ -36,50 +36,65 @@ from scipy.stats import entropy
 
 main_parameters = {
 
-    # Procedure
-    "force_extract"         : 1,
-    "force_predict_nuclei"  : 1,
-    "force_predict_asc"     : 1,
-    "force_classify_nuclei" : 1,
-    "force_classify_asc"    : 1,
-    "force_measure"         : 1,
-    "force_analyse"         : 1,
+    # Procedure ---------------------------------------------------------------
     
-    # Paths
-    "data_path"             : Path("D:\local_mbl\data"),
+    # 0 to skip, 1 to run if not already done and 2 to force execution
+
+    "run_extract"           : 1, 
+    "run_predict_nuclei"    : 1,
+    "run_predict_asc"       : 1,
+    "run_classify_nuclei"   : 1,
+    "run_classify_asc"      : 1,
+    "run_measure"           : 1,
+    "run_analyse"           : 1,
+    
+    # Paths -------------------------------------------------------------------
+    
+    # Select data folder path and models
+    
+    "data_path"             : "D:\local_mbl\data",
     "model_pvw_name"        : "model-sm_preview_256_binary_227-1024",
     "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
     "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
     "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
     "model_asc_class_name"  : "model-cls_asc_48_4_3_4467-8190b",
     
-    # extract()
-    "pvw_level"             : 4,
-    "stk_level"             : 1,
+    # extract() ---------------------------------------------------------------
+    
+    "pvw_level"             : 4,    # Pyramid level for preview
+    "stk_level"             : 1,    # Pyramid level for measure & analysis
         
-    # predict_nuclei()
-    "ncl_level"             : 0,
-    "ncl_thresh_0"          : 0.20,
-    "ncl_thresh_1"          : 0.40,
-    "ncl_min_size"          : 8,    # in µm² at level = 0
-    "ncl_max_size"          : 512,  # in µm² at level = 0
+    # predict_nuclei() --------------------------------------------------------
     
-    # predict_asc()
-    "asc_level"             : 0,
-    "asc_thresh_0"          : 0.1,
-    "asc_thresh_1"          : None,
-    "asc_min_size"          : 8,    # in µm² at level = 0
-    "asc_max_size"          : None, # in µm² at level = 0
+    "ncl_level"             : 0,    # Pyramid level for nuclei prediction
+    "ncl_thresh_0"          : 0.20, # Probability thresh. 0 (outlines)
+    "ncl_thresh_1"          : 0.40, # Probability thresh. 1 (cores)
+    "ncl_min_size"          : 8,    # µm² at level = 0
+    "ncl_max_size"          : 512,  # µm² at level = 0
     
-    # Measure()
-    "pixel_size"            : 0.5,  # in µm at level = 0
-    "int_crop_size"         : 16,   # in µm at level = 0
+    # predict_asc() -----------------------------------------------------------
+    
+    "asc_level"             : 0,    # Pyramid level for asc prediction
+    "asc_thresh_0"          : 0.1,  # Probability thresh. 0 (outlines)
+    "asc_thresh_1"          : None, # Probability thresh. 1 (cores)
+    "asc_min_size"          : 8,    # µm² at level = 0
+    "asc_max_size"          : None, # µm² at level = 0
+    
+    # Measure() ---------------------------------------------------------------
+    
+    "pixel_size"            : 0.5,  # µm at level = 0
+    "int_crop_size"         : 16,   # win. size for fluo. int. measurment (µm at level = 0)
     "int_norm"              : True, # normalize fluo. int. (per channel)
-    "dst_bin_size"          : 4,    # in µm at level = 0
-    "dst_bin_max"           : 32,   # in µm at level = 0
+    "dst_bin_size"          : 4,    # µm at level = 0
+    "dst_bin_max"           : 32,   # µm at level = 0
     "dst_norm"              : True, # normalize distances (per class)
     
-    # Analyse()
+    # 
+    
+    # Analyse() ---------------------------------------------------------------
+    
+    # Name of views to skip for merged analysis
+    
     "skip_views" : [
         "251127_D2_S2_Scan1_unmixed_01",
         ], 
@@ -130,7 +145,7 @@ main_parameters = {
 #%% Class(Main) ---------------------------------------------------------------
 
 class Main:
-    def __init__(self, parameters=None):
+    def __init__(self, parameters=None, run=False):
         self.parameters = parameters
         for key, val in self.parameters.items():
             if not isinstance(val, dict):
@@ -138,7 +153,7 @@ class Main:
                 
         # Run
         self.initialize()
-        if __name__ == "__main__":
+        if run:
             self.extract()
             self.predict_nuclei()
             self.predict_asc()
@@ -158,6 +173,7 @@ class Main:
         print(log_str)
         print("-" * len(log_str))
         
+        self.data_path = Path(self.data_path)
         qpt_paths = list(self.data_path.glob("*unmixed.qptiff"))
         self.qpt_paths, self.mtd_paths, self.vws_paths  = [], [], []
         for p, qpt_path in enumerate(qpt_paths): 
@@ -214,8 +230,8 @@ class Main:
                 pvw_sts_path = vws_path / "preview_stats.pkl"
                 stk_nrm_path = vws_path / "stack_norm.tif"
 
-                if ((self.force_extract > 0 and not stk_nrm_path.exists()) 
-                    or self.force_extract == 2):
+                if ((self.run_extract > 0 and not stk_nrm_path.exists()) 
+                    or self.run_extract == 2):
                     
                     # Log
                     t0i = time.time()
@@ -311,8 +327,8 @@ class Main:
             ncl_prp_path = vws_path / "nuclei_properties.pkl"
             roi_idx = int(vws_path.stem[-2:])
 
-            if ((self.force_predict_nuclei > 0 and not ncl_prp_path.exists()) 
-                or self.force_predict_nuclei == 2):
+            if ((self.run_predict_nuclei > 0 and not ncl_prp_path.exists()) 
+                or self.run_predict_nuclei == 2):
                        
                 # Log
                 t0i = time.time()
@@ -422,8 +438,8 @@ class Main:
             asc_prp_path = vws_path / "asc_properties.pkl"
             roi_idx = int(vws_path.stem[-2:])
             
-            if ((self.force_predict_asc > 0 and not asc_prp_path.exists()) 
-                or self.force_predict_asc == 2):
+            if ((self.run_predict_asc > 0 and not asc_prp_path.exists()) 
+                or self.run_predict_asc == 2):
                                 
                 # Log
                 t0i = time.time()
@@ -528,8 +544,8 @@ class Main:
             ncl_prp_path = vws_path / "nuclei_properties.pkl"
             ncl_cls_path = vws_path / "nuclei_classes.pkl"
             
-            if ((self.force_classify_nuclei > 0 and not ncl_cls_path.exists()) 
-                or self.force_classify_nuclei == 2):
+            if ((self.run_classify_nuclei > 0 and not ncl_cls_path.exists()) 
+                or self.run_classify_nuclei == 2):
                 
                 # Log
                 t0i = time.time()
@@ -613,8 +629,8 @@ class Main:
             asc_prp_path = vws_path / "asc_properties.pkl"
             asc_cls_path = vws_path / "asc_classes.pkl"
             
-            if ((self.force_classify_asc > 0 and not asc_cls_path.exists()) 
-                or self.force_classify_asc == 2):
+            if ((self.run_classify_asc > 0 and not asc_cls_path.exists()) 
+                or self.run_classify_asc == 2):
                 
                 # Log
                 t0i = time.time()
@@ -716,8 +732,8 @@ class Main:
             
             plot_path = vws_path / "plot.png"
             
-            if ((self.force_measure > 0 and not ncl_int_path.exists()) 
-                or self.force_measure == 2):   
+            if ((self.run_measure > 0 and not ncl_int_path.exists()) 
+                or self.run_measure == 2):   
                 
                 # Log
                 t0i = time.time()
@@ -866,7 +882,7 @@ class Main:
 
     def analyse(self):
         
-        if self.force_analyse > 0:
+        if self.run_analyse > 0:
         
             # Log
             t0i = time.time()

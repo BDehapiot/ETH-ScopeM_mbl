@@ -149,7 +149,7 @@ class Plot:
         
         # Data
         ax = axes[0]
-        x = self.plot_classes
+        x = self.plot_ncl_classes
         y = self.ncl_data_avg["freq"] 
         if self.err_type == "std":
             err = self.ncl_data_std["freq"] if self.merged else None
@@ -165,15 +165,15 @@ class Plot:
         # Legend
         ax.set_ylim(0, 1)
         ax.set_ylabel("Frequency")
-        ax.set_xticks(np.arange(0, len(self.plot_classes)))
-        ax.set_xticklabels(self.plot_classes, rotation=45, ha="center")
+        ax.set_xticks(np.arange(0, len(self.plot_ncl_classes)))
+        ax.set_xticklabels(self.plot_ncl_classes, rotation=45, ha="center")
         ax.set_title("Ncl. class pred. freq.", pad=10)
         
 #%% Class(Plot) : (1) Class predictions entropy -------------------------------
         
         # Data
         ax = axes[1]
-        x = self.plot_classes
+        x = self.plot_ncl_classes
         y = self.ncl_data_avg["entropy"] 
         if self.err_type == "std":
             err = self.ncl_data_std["entropy"]
@@ -189,8 +189,8 @@ class Plot:
         # Legend
         ax.set_ylim(0, 1)
         ax.set_ylabel("Entropy")
-        ax.set_xticks(np.arange(0, len(self.plot_classes)))
-        ax.set_xticklabels(self.plot_classes, rotation=45, ha="center")
+        ax.set_xticks(np.arange(0, len(self.plot_ncl_classes)))
+        ax.set_xticklabels(self.plot_ncl_classes, rotation=45, ha="center")
         ax.set_title("Ncl. class pred. entropy", pad=10)
         
 #%% Class(Plot) : (2) ASC statistics ------------------------------------------
@@ -250,7 +250,7 @@ class Plot:
         
         # Data
         ax = axes[3]
-        x = self.plot_classes
+        x = self.plot_ncl_classes
         
         for t, tag in enumerate(["nsp", "spk"]):
             
@@ -281,8 +281,8 @@ class Plot:
         # Legend
         ax.set_ylim(0, ymax)
         ax.set_ylabel("Fluo. Int. (A.U.)")
-        ax.set_xticks(np.arange(0, len(self.plot_classes)))
-        ax.set_xticklabels(self.plot_classes, rotation=45, ha="center")
+        ax.set_xticks(np.arange(0, len(self.plot_ncl_classes)))
+        ax.set_xticklabels(self.plot_ncl_classes, rotation=45, ha="center")
         ax.set_title(f"Ncl. ASC int. {norm_str}", pad=10)
             
 #%% Class(Plot) : (4-5) ASC distance class enrichment -------------------------
@@ -307,7 +307,7 @@ class Plot:
                 self.lineplot(
                     x, y, ax=ax, 
                     color=self.ncl_colors[cl], 
-                    label=self.plot_classes[cl],
+                    label=self.plot_ncl_classes[cl],
                     )
                 
             # Legend
@@ -339,7 +339,7 @@ class Plot:
         
             # Data
             ax = axes[ii]
-            x = self.plot_classes
+            x = self.plot_ncl_classes
             
             for ch, chn in enumerate(self.plot_channels):
                 y = np.array(self.ncl_data_mrg[
