@@ -16,7 +16,7 @@ main_parameters = {
     "run_measure"         : 1,
     "run_analyse"         : 1,
     
-    # 0 to skip, 1 to run if not already done and 2 to force execution
+    # 0 to skip, 1 to run if not already done and 2 to force execution.
     
     # Paths -------------------------------------------------------------------
         
@@ -37,7 +37,7 @@ main_parameters = {
     "asc_max_size"  : None, # max. area (in µm² at level = 0)
     
     # 2 thresholds approach (object separation) works for edt models only 
-    # Use None for thresh_1 with binary models
+    # Use None for thresh_1 with binary models.
     
     # Measurments -------------------------------------------------------------
     
@@ -102,11 +102,11 @@ main_parameters = {
         
     # Select model ------------------------------------------------------------
 
-    "model_pvw_name"        : "model-sm_preview_256_binary_227-1024",
-    "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
-    "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
-    "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
-    "model_asc_class_name"  : "model-cls_asc_48_4_3_4467-8190b",
+    "model_pvw_name"       : "model-sm_preview_256_binary_227-1024",
+    "model_ncl_name"       : "model-sm_nuclei_256_edt_192-1024",
+    "model_asc_name"       : "model-sm_asc_256_binary_377-1024",
+    "model_ncl_class_name" : "model-cls_nuclei_12_2_6_5045-8190b",
+    "model_asc_class_name" : "model-cls_asc_48_4_3_4467-8190b",
 
     # Pyramid levels ----------------------------------------------------------
     
@@ -131,8 +131,6 @@ main_parameters = {
     }
 
 #%% Outputs -------------------------------------------------------------------
-
-
 
 
 #%%
