@@ -2,7 +2,6 @@
 
 import pickle
 import numpy as np
-from main import Main, main_parameters
 
 # functions
 from functions import imread_channel, get_mask_from_coords
@@ -21,9 +20,9 @@ from qtpy.QtWidgets import (
     QPushButton, QRadioButton, QWidget, QLabel,
     )
 
-#%% Class : AnnotateASC() -----------------------------------------------------
+#%% Class : AnnotateASCClasses() ----------------------------------------------
 
-class AnnotateASC:
+class AnnotateASCClasses:
     def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
@@ -40,7 +39,7 @@ class AnnotateASC:
         self.init_viewer()
         self.init_layers()
         
-#%% Class(AnnotateASC) : initialize() -----------------------------------------
+#%% Class(AnnotateASCClasses) : initialize() ----------------------------------
 
     def initialize(self):
         
@@ -48,7 +47,7 @@ class AnnotateASC:
         self.mtd_paths = self.main.mtd_paths
         self.vws_paths = self.main.vws_paths
         
-#%% Class(AnnotateASC) : function(s) ------------------------------------------
+#%% Class(AnnotateASCClasses) : function(s) -----------------------------------
 
     # Logic & updates ---------------------------------------------------------
             
@@ -145,7 +144,7 @@ class AnnotateASC:
         self.vwr.layers["asc_msk"].visible = 1
         self.vwr.layers["asc_slc"].visible = 1
         
-#%% Class(AnnotateASC) : init_viewer() ----------------------------------------        
+#%% Class(AnnotateASCClasses) : init_viewer() ---------------------------------       
 
     def init_viewer(self):
             
@@ -232,7 +231,7 @@ class AnnotateASC:
                 yield
                 self.vwr.layers["asc_slc"].mode = "paint"
         
-#%% Class(AnnotateASC) : init_layers() ----------------------------------------
+#%% Class(AnnotateASCClasses) : init_layers() ---------------------------------
 
     def init_layers(self):  
         
@@ -267,7 +266,7 @@ class AnnotateASC:
         n_nvl = self.asc_ann["class"].count(3)
 
         self.info.setText(
-            f"{self.vws_paths[self.vws_idx].name}\n"
+            f"{self.vws_paths[self.vws_idx].name}\n\n"
             f"n Speckle     = {n_spk}\n"
             f"n Non-speckle = {n_nsp}\n"
             f"n Non-valid   = {n_nvl}"
@@ -276,7 +275,9 @@ class AnnotateASC:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)
-    ann = AnnotateASC(main)
+    from main import Main
+    from run import main_parameters  
+    main = Main(parameters=main_parameters, run=False)
+    ann = AnnotateASCClasses(main)
     asc_prp = ann.asc_prp
     asc_ann = ann.asc_ann

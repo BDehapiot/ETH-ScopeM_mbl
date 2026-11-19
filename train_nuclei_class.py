@@ -1,15 +1,16 @@
 #%% Imports -------------------------------------------------------------------
 
+import time
+import pickle
+import numpy as np
+from skimage import io
 from pathlib import Path
 
-#%% Comments ------------------------------------------------------------------
+# functions
+from functions import imread_channel, get_obj_crops
 
-'''
-This code is not yet updated. Please refer to "train_asc_class.py" to implement
-it. The parameters listed below were used to train the currently used nuclei 
-classification model : model-cls_nuclei_12_2_6_5045-8190b
-Note : the "annotate_ncl.py" code was however already updated
-'''
+# bdtools
+from bdtools.model.model import Model
 
 #%% Inputs --------------------------------------------------------------------
 
@@ -18,12 +19,11 @@ parameters = {
     # Procedure ---------------------------------------------------------------
     
     "run_crops"          : 0,
-    "run_classify"       : 0,
-    "run_train"          : 0,
+    "run_train"          : 1,
     
     # Paths -------------------------------------------------------------------
     
-    "train_path" : Path.cwd() / "data" / "train_ncl_class", 
+    "train_path" : Path.cwd() / "data" / "train_nuclei_class", 
         
     # Crops -------------------------------------------------------------------
     
@@ -112,3 +112,137 @@ model_parameters = {
     },
 
     }
+
+#%% Class(TrainNucleiClasses) -------------------------------------------------
+
+class TrainNucleiClasses:
+    def __init__(self, main, parameters=None, model_parameters=None):
+        self.main = main
+        self.parameters = parameters
+        self.model_parameters = model_parameters
+        self.parameters = parameters | main.parameters
+        for key, val in self.parameters.items():
+            if not isinstance(val, dict):
+                setattr(self, key, val)
+                
+        # Run
+        if self.run_crops:
+            self.extract_crops()
+        if self.run_train:
+            self.train()
+            
+#%% Class(TrainNucleiClasses) : extract_crops() -------------------------------
+
+    def extract_crops(self):
+
+        ncl_crp = []
+        ncl_ann = {"y" : [], "x" : [], "class" : []}
+        for p, vws_path in enumerate(self.main.vws_paths):
+                                
+            # Paths
+            ncl_ann_path = vws_path / "nuclei_annotations.pkl"
+            stk_nrm_path = vws_path / "stack_norm.tif"
+            
+            if ncl_ann_path.exists():
+                
+                # Log
+                t0i = time.time()
+                log_str = f"TrainNucleiClasses() : extract_crops() : {vws_path.name}"
+                print("-" * len(log_str))
+                print(log_str)
+                print("-" * len(log_str))
+            
+                # Load --------------------------------------------------------
+                
+                t0 = time.time()
+                
+                with open(ncl_ann_path, "rb") as file:
+                    _ncl_ann = pickle.load(file)  
+                stk_nrm = imread_channel(
+                    stk_nrm_path, channel_idx=[1, 2, 3, 5, 6]
+                    )  
+                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - load")
+                                
+                # Get crops ---------------------------------------------------
+                
+                t0 = time.time()
+                
+                # Append ncl_ann
+                ncl_ann["y"].extend(_ncl_ann["y"])
+                ncl_ann["x"].extend(_ncl_ann["x"])
+                ncl_ann["class"].extend(_ncl_ann["class"])
+                                
+                # Get crops
+                ncl_crp.append(get_obj_crops(
+                    stk_nrm, _ncl_ann["y"], _ncl_ann["x"], 
+                    crop_size=self.model_parameters["patch_size"], 
+                    crop_fraction=None, 
+                    ))
+                                                
+                t1 = time.time()
+                print(f"{t1 - t0:.3f}s - get crops")
+                
+                t1f = time.time()
+                print(f"> {t1f - t0i:.3f}s")
+                
+        # Save ----------------------------------------------------------------
+                
+        # Log
+        log_str = "TrainNucleiClasses() : extract_crops() : save all"
+        print("-" * len(log_str))
+        print(log_str)
+        print("-" * len(log_str))
+                
+        # Save
+        t0 = time.time()
+
+        with open(self.train_path / "ncl_ann.pkl", "wb") as file:
+            pickle.dump(ncl_ann, file)
+        ncl_crp = np.concatenate(ncl_crp, axis=0)
+        io.imsave(self.train_path / "ncl_crp.tif", 
+            ncl_crp, check_contrast=False,
+            )
+        
+        t1 = time.time()
+        print(f"> {t1 - t0:.3f}s")
+        
+#%% Class(TrainNucleiClasses) : train() ---------------------------------------
+        
+    def train(self):
+        
+        # Paths
+        ncl_ann_paths = sorted(self.train_path.glob("ncl_ann*.pkl"))
+        ncl_crp_paths = sorted(self.train_path.glob("ncl_crp*.tif"))
+        if not ncl_ann_paths or not ncl_crp_paths:
+            raise FileNotFoundError(
+                "No ncl_ann*.pkl or ncl_crp*.tif files found")
+    
+        # Load
+        ncl_ann = []
+        for path in ncl_ann_paths:
+            with open(path, "rb") as file:
+                _ncl_ann = pickle.load(file)
+                ncl_ann.append(np.array(_ncl_ann["class"]) - 1)
+        ncl_crp = [
+            io.imread(path).astype("float32") / 255 for path in ncl_crp_paths]
+        
+        # Concatenate
+        ncl_ann = np.concatenate(ncl_ann, axis=0)
+        ncl_crp = np.concatenate(ncl_crp, axis=0)
+    
+        # Setup model
+        self.model = Model(parameters=self.model_parameters, model_path=None)
+    
+        # Train model
+        self.model.train(ncl_crp, y=ncl_ann)
+        
+#%% Execute -------------------------------------------------------------------
+
+if __name__ == "__main__":
+    from main import Main
+    from run import main_parameters  
+    main = Main(parameters=main_parameters, run=False)
+    train = TrainNucleiClasses(
+        main, parameters=parameters, model_parameters=model_parameters)  

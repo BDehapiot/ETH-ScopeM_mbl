@@ -4,7 +4,6 @@ import napari
 import pickle
 import numpy as np
 from skimage import io
-from main import Main, main_parameters
 
 # functions
 from functions import get_mask_from_coords
@@ -16,9 +15,9 @@ from qtpy.QtWidgets import (
     QPushButton, QWidget, QLabel,
     )
 
-#%% Class : AnnotateNCL() -----------------------------------------------------
+#%% Class : AnnotateNucleiClasses() -------------------------------------------
 
-class AnnotateNCL:
+class AnnotateNucleiClasses:
     def __init__(self, main):
         self.main = main
         self.parameters = main.parameters
@@ -35,7 +34,7 @@ class AnnotateNCL:
         self.init_viewer()
         self.init_layers()
         
-#%% Class(AnnotateNCL) : initialize() -----------------------------------------
+#%% Class(AnnotateNucleiClasses) : initialize() -------------------------------
 
     def initialize(self):
         
@@ -60,7 +59,7 @@ class AnnotateNCL:
         self.color_map = {
             v["tag"]: v["color"] for v in self.ncl_class_map.values()}
                 
-#%% Class(AnnotateNCL) : function(s) ------------------------------------------
+#%% Class(AnnotateNucleiClasses) : function(s) --------------------------------
 
     # Logic & updates ---------------------------------------------------------
             
@@ -162,7 +161,7 @@ class AnnotateNCL:
     def show_mask(self):
         self.vwr.layers["points"].visible = 1
         
-#%% Class(AnnotateNCL) : init_viewer() ----------------------------------------       
+#%% Class(AnnotateNucleiClasses) : init_viewer() ------------------------------      
 
     def init_viewer(self):
             
@@ -180,7 +179,7 @@ class AnnotateNCL:
         self.vws_group_box.setLayout(self.vws_group_layout)
         
         # Create "classify" menu
-        self.cls_group_box = QGroupBox("AnnotateNCL")
+        self.cls_group_box = QGroupBox("AnnotateNucleiClasses")
         self.cls_group_layout = QVBoxLayout()
         for key, val in self.ncl_class_map.items():
             setattr(self, key, QPushButton(val["class"]))
@@ -235,7 +234,7 @@ class AnnotateNCL:
             yield
             self.show_mask()
                         
-#%% Class(AnnotateNCL) : init_layers() ----------------------------------------
+#%% Class(AnnotateNucleiClasses) : init_layers() ------------------------------
 
     def init_layers(self):  
         
@@ -258,7 +257,7 @@ class AnnotateNCL:
         self.vwr.layers["points"].mode = "select"
         self.vwr.layers["points"].highlight_box = False # debug
                         
-#%% Class(AnnotateNCL) : info() -----------------------------------------------
+#%% Class(AnnotateNucleiClasses) : info() -------------------------------------
 
     def get_info(self):
         
@@ -272,14 +271,14 @@ class AnnotateNCL:
         
         self.info.setText(
             f"{self.vws_paths[self.vws_idx].name}\n"
-            f"({channel})\n"
-            f"{''.join(classify_str)}"
+            f"({channel})\n\n"
+            f"{''.join(classify_str)}\n"
             )
 
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)
-    ann = AnnotateNCL(main)
-    ncl_prp = ann.ncl_prp
-    ncl_ann = ann.ncl_ann
+    from main import Main
+    from run import main_parameters  
+    main = Main(parameters=main_parameters, run=False)
+    ann = AnnotateNucleiClasses(main)

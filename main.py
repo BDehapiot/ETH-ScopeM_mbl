@@ -455,7 +455,8 @@ class Main:
                 with open(ncl_prp_path, "rb") as file:
                     ncl_prp = pickle.load(file)
                 stk_nrm = imread_channel(
-                    stk_nrm_path, channel_idx=[1, 2, 3, 5, 6])  
+                    stk_nrm_path, channel_idx=[1, 2, 3, 5, 6]
+                    )  
                 
                 t1 = time.time()
                 print(f"{t1 - t0:.3f}s - load")

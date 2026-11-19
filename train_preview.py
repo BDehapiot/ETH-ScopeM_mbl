@@ -5,7 +5,6 @@ import numpy as np
 np.random.seed(42)
 from skimage import io
 from pathlib import Path
-from main import Main, main_parameters
 
 # functions
 from functions import get_preview_processed
@@ -53,19 +52,7 @@ model_parameters = {
     
     # sm
     "backbone"           : "resnet18",
-    
-    # # cls
-    # "filters"            : [16, 32],
-    # "n_classes"          : 12,
-    # "classes"            : None,
-    # "glob_avg_pool"      : True,
-    # "regularizer"        : 0.001,
-    # "dropout"            : 0.5,
-    
-    # # aec
-    # "filters"            : [16, 32],
-    # "latent_size"        : 128,
-    
+        
     # Prepare -----------------------------------------------------------------
     
     "patch_size"         : 256,
@@ -234,6 +221,8 @@ class TrainPreview:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main  = Main(parameters=main_parameters)
+    from main import Main
+    from run import main_parameters  
+    main = Main(parameters=main_parameters, run=False)
     train = TrainPreview(
         main, parameters=parameters, model_parameters=model_parameters)

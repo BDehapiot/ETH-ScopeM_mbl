@@ -5,7 +5,6 @@ import pickle
 import numpy as np
 from skimage import io
 from pathlib import Path
-from main import Main, main_parameters
 
 # functions
 from functions import get_obj_crops
@@ -235,6 +234,8 @@ class TrainASCClasses:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)
+    from main import Main
+    from run import main_parameters  
+    main = Main(parameters=main_parameters, run=False)
     train = TrainASCClasses(
         main, parameters=parameters, model_parameters=model_parameters)  

@@ -3,7 +3,6 @@
 import pickle
 import numpy as np
 from skimage import io
-from main import Main, main_parameters
 
 # functions
 from functions import  get_sfactor, get_mask_from_coords
@@ -336,6 +335,8 @@ class Display:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
-    main = Main(parameters=main_parameters)
+    from main import Main
+    from run import main_parameters   
+    main = Main(parameters=main_parameters, run=False)
     display = Display(main)
     napari.run()
