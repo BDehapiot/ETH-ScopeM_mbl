@@ -12,8 +12,8 @@ via Napari and Matplotlib, respectively, while the `annotate_[...].py` &
 `train_[...].py` scripts handle training the deep-learning models used for 
 object segmentation and classification in the raw images.
 
-⚠️ Images must be aquired at the same magnification (pixel size).  
-⚠️ Images must contain the following channels in the correct order :
+Images must be aquired at the same magnification (pixel size).  
+Images must contain the following channels in the correct order :
 
 ``` yml
 - chn 1 : DAPI  
@@ -79,8 +79,8 @@ Control Nuclei & ASC clusters segmentation from predicted probability images.
 "asc_min_size" : int or None # min. area (in µm² at level = 0)
 "asc_max_size" : int or None # max. area (in µm² at level = 0)
 ```
-⚠️ 2 thresholds approach (object separation) works for edt models only.  
-⚠️ Use `None` for thresh_1 with binary models.
+2 thresholds approach (object separation) works for edt models only.  
+Use `None` for thresh_1 with binary models.
 
 ### Measurments
 
@@ -153,7 +153,7 @@ Individual nuclei measurments.
 "asc_spk_dst"  : float # speckle ASC cluster
 "asc_nsp_dst"  : float # non-speckle ASC cluster
 ```
-⚠️ Fluorescence intensity measurements for the ASC channel are performed on 
+Fluorescence intensity measurements for the ASC channel are performed on 
 processed images, with all pixels outside the predicted ASC mask set to 0.
 
 #### `nuclei_data_[avg/std/sem].csv`
@@ -249,6 +249,6 @@ Merged, avg, std, sem of individual view `asc_data_avg.csv`.
 #### `asc_sts_[merged/avg/std/sem].csv`
 Merged, avg, std, sem of individual view `asc_sts.csv`. 
 
-⚠️ Dataset statistics are made on averaged view data, not individual nuclei 
+Dataset statistics are made on averaged view data, not individual nuclei 
 or ASC clusters.
 

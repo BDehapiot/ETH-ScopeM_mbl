@@ -1,7 +1,3 @@
-#%% Imports -------------------------------------------------------------------
-
-from main import Main
-
 #%% Parameters ----------------------------------------------------------------
 
 main_parameters = {
@@ -9,11 +5,11 @@ main_parameters = {
     # Procedure ---------------------------------------------------------------
     
     "run_extract"         : 1, 
-    "run_predict_nuclei"  : 1,
-    "run_predict_asc"     : 1,
-    "run_classify_nuclei" : 1,
-    "run_classify_asc"    : 1,
-    "run_measure"         : 1,
+    "run_predict_nuclei"  : 2,
+    "run_predict_asc"     : 2,
+    "run_classify_nuclei" : 2,
+    "run_classify_asc"    : 2,
+    "run_measure"         : 2,
     "run_analyse"         : 1,
     
     # 0 to skip, 1 to run if not already done and 2 to force execution.
@@ -125,15 +121,13 @@ main_parameters = {
         "Speckle", "Non-speckle", "Non-valid"],
     "plot_channels" : [
         "Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"],
-    "plot_classes"  : [
+    "plot_ncl_classes" : [
         "Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"],
     
     }
 
-#%% Outputs -------------------------------------------------------------------
-
-
 #%%
 
 if __name__ == "__main__":
+    from main import Main
     main = Main(parameters=main_parameters, run=True)

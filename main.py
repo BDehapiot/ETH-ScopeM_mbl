@@ -30,118 +30,6 @@ from bdtools.model.model import Model
 # scipy
 from scipy.stats import entropy
 
-#%% Comments ------------------------------------------------------------------
-
-#%% Inputs --------------------------------------------------------------------
-
-main_parameters = {
-
-    # Procedure ---------------------------------------------------------------
-    
-    # 0 to skip, 1 to run if not already done and 2 to force execution
-
-    "run_extract"           : 1, 
-    "run_predict_nuclei"    : 1,
-    "run_predict_asc"       : 1,
-    "run_classify_nuclei"   : 1,
-    "run_classify_asc"      : 1,
-    "run_measure"           : 1,
-    "run_analyse"           : 1,
-    
-    # Paths -------------------------------------------------------------------
-    
-    # Select data folder path and models
-    
-    "data_path"             : "D:\local_mbl\data",
-    "model_pvw_name"        : "model-sm_preview_256_binary_227-1024",
-    "model_ncl_name"        : "model-sm_nuclei_256_edt_192-1024",
-    "model_asc_name"        : "model-sm_asc_256_binary_377-1024",
-    "model_ncl_class_name"  : "model-cls_nuclei_12_2_6_5045-8190b",
-    "model_asc_class_name"  : "model-cls_asc_48_4_3_4467-8190b",
-    
-    # extract() ---------------------------------------------------------------
-    
-    "pvw_level"             : 4,    # Pyramid level for preview
-    "stk_level"             : 1,    # Pyramid level for measure & analysis
-        
-    # predict_nuclei() --------------------------------------------------------
-    
-    "ncl_level"             : 0,    # Pyramid level for nuclei prediction
-    "ncl_thresh_0"          : 0.20, # Probability thresh. 0 (outlines)
-    "ncl_thresh_1"          : 0.40, # Probability thresh. 1 (cores)
-    "ncl_min_size"          : 8,    # µm² at level = 0
-    "ncl_max_size"          : 512,  # µm² at level = 0
-    
-    # predict_asc() -----------------------------------------------------------
-    
-    "asc_level"             : 0,    # Pyramid level for asc prediction
-    "asc_thresh_0"          : 0.1,  # Probability thresh. 0 (outlines)
-    "asc_thresh_1"          : None, # Probability thresh. 1 (cores)
-    "asc_min_size"          : 8,    # µm² at level = 0
-    "asc_max_size"          : None, # µm² at level = 0
-    
-    # Measure() ---------------------------------------------------------------
-    
-    "pixel_size"            : 0.5,  # µm at level = 0
-    "int_crop_size"         : 16,   # win. size for fluo. int. measurment (µm at level = 0)
-    "int_norm"              : True, # normalize fluo. int. (per channel)
-    "dst_bin_size"          : 4,    # µm at level = 0
-    "dst_bin_max"           : 32,   # µm at level = 0
-    "dst_norm"              : True, # normalize distances (per class)
-    
-    # 
-    
-    # Analyse() ---------------------------------------------------------------
-    
-    # Name of views to skip for merged analysis
-    
-    "skip_views" : [
-        "251127_D2_S2_Scan1_unmixed_01",
-        ], 
-    
-    # Maps  -------------------------------------------------------------------
-    
-    "channels" : [
-        "DAPI", "Ly6G", "TCRbeta", "CD19", "ASC", "Iba1", "EpCAM", "AF",
-        ],
-    "ncl_classes" : [
-        "Other", "Epithelium", "Neutrophil", "Macrophage", "Bcell", "Tcell",  
-        ],
-    "asc_classes" : [
-        "Speckle", "Non-speckle", "Non-valid",
-        ],
-    
-    "ncl_colors" : [
-        [0.0, 0.0, 1.0], # Other
-        [0.0, 0.8, 0.2], # Epithelium
-        [1.0, 0.0, 0.0], # Neutrophil
-        [1.0, 0.0, 1.0], # Macrophage
-        [0.0, 1.0, 1.0], # Bcell
-        [0.8, 0.8, 0.0], # Tcell
-        ],
-
-    # Plot  -------------------------------------------------------------------
-    
-    # Channels & classes
-    "plot_channels" : ["Ly6G", "TCRbeta", "CD19", "Iba1", "EpCAM"],
-    "plot_classes"  : ["Other", "Epi.", "Neut.", "Macro.", "Bcell", "Tcell"],
-    
-    # Error bars
-    "err_type" : "sem",
-    
-    # Line & grids
-    "hline_params" : {
-        "y" : 1, "color" : "0.75", "zorder" : 0,
-        "linewidth" : 0.5, "linestyle" : ":",
-        },
-    
-    "grid_params" : {
-        "axis" : "x", "color" : "0.75", "zorder" : 0,
-        "linewidth" : 0.5, "linestyle" : ":", 
-        },
-
-    }
-
 #%% Class(Main) ---------------------------------------------------------------
 
 class Main:
@@ -1012,4 +900,5 @@ class Main:
 #%% Execute -------------------------------------------------------------------
 
 if __name__ == "__main__":
+    from run import main_parameters
     main = Main(parameters=main_parameters)
