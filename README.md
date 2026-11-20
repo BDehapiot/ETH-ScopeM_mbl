@@ -14,6 +14,7 @@ Multi-channel tissue analysis
 - [Overview](#overview)
 - [Parameters](#parameters)
 - [Outputs](#outputs)
+- [Annotation & model training](#annotation-&-model-training)
 - [Comments](#comments)
 
 ## Installation
@@ -100,35 +101,18 @@ via Napari and Matplotlib, respectively, while the `annotate_[...].py` &
 `train_[...].py` scripts handle training the deep-learning models used for 
 object segmentation and classification in the raw images.
 
-Images must be aquired at the same magnification (pixel size).  
-Images must contain the following channels in the correct order :
+/ ! / Images must be aquired at the same magnification (pixel size).  
+/ ! / Images must contain the following channels in the correct order :
 
 ``` yml
-- chn 1 : DAPI  
-- chn 2 : Ly6G  
-- chn 3 : TCRbeta  
-- chn 4 : CD19  
-- chn 5 : ASC  
-- chn 6 : Iba1  
-- chn 7 : EpCAM  
-- chn 8 : Autofluo. (AF)  
-```
-
-Nuclei classification is performed across the following categories :
-``` yml
-- Other       : # Unclassified / negative for lineage markers
-- Epithelium  : # High EpCAM expression
-- Neutrophil  : # High Ly6G expression (EpCAM-low)
-- Macrophage  : # High Iba1 expression
-- Bcell       : # High CD19 expression
-- Tcell       : # High TCRbeta expression
-```
-
-ASC cluster classification is performed across the following categories : 
-``` yml
-- Speckle     : # Small, bright, and isolated ASC cluster
-- Non-speckle : # Large, bright ASC cluster
-- Non-valid   : # Artifactual or noisy detection (excluded)
+- chn1 # DAPI  
+- chn2 # Ly6G  
+- chn3 # TCRbeta  
+- chn4 # CD19  
+- chn5 # ASC  
+- chn6 # Iba1  
+- chn7 # EpCAM  
+- chn8 # Autofluo. (AF)  
 ```
 
 ## Parameters
@@ -167,8 +151,8 @@ Control Nuclei & ASC clusters segmentation from predicted probability images.
 "asc_min_size" : int or None # min. area (in µm² at level = 0)
 "asc_max_size" : int or None # max. area (in µm² at level = 0)
 ```
-2 thresholds approach (object separation) works for edt models only.  
-Use `None` for thresh_1 with binary models.
+/ ! / 2 thresholds approach (object separation) works for edt models only.  
+/ ! / Use `None` for thresh_1 with binary models.
 
 ### Measurments
 
@@ -241,7 +225,7 @@ Individual nuclei measurments.
 "asc_spk_dst"  : float # speckle ASC cluster
 "asc_nsp_dst"  : float # non-speckle ASC cluster
 ```
-Fluorescence intensity measurements for the ASC channel are performed on 
+/ ! / Fluorescence intensity measurements for the ASC channel are performed on 
 processed images, with all pixels outside the predicted ASC mask set to 0.
 
 #### `nuclei_data_[avg/std/sem].csv`
@@ -337,9 +321,49 @@ Merged, avg, std, sem of individual view `asc_data_avg.csv`.
 #### `asc_sts_[merged/avg/std/sem].csv`
 Merged, avg, std, sem of individual view `asc_sts.csv`. 
 
-Dataset statistics are made on averaged view data, not individual nuclei 
+/ ! / Dataset statistics are made on averaged view data, not individual nuclei 
 or ASC clusters.
 
+## Annotation & model training
+The main procedure relies on 5 distinct deep-learning models :
+``` yml
+- model-sm_preview_[...] # (level 4 res.) Segmentation of the overall tissue
+- model-sm_nuclei_[...]  # (level 0 res.) Segmentation of the nuclei 
+- model-sm_asc_[...]     # (level 0 res.) Segmentation of the ASC clusters 
+- model-cls_nuclei_[...] # (level 1 res.) Classification of nuclei 
+- model-cld_asc_[...]    # (level 1 res.) Classification of ASC clusters 
+```
 
+Nuclei classification is performed across the following categories :
+``` yml
+- Other       # Unclassified / negative for lineage markers
+- Epithelium  # High EpCAM expression
+- Neutrophil  # High Ly6G expression (EpCAM-low)
+- Macrophage  # High Iba1 expression
+- Bcell       # High CD19 expression
+- Tcell       # High TCRbeta expression
+```
+
+ASC cluster classification is performed across the following categories : 
+``` yml
+- Speckle     # Small, bright, and isolated ASC cluster
+- Non-speckle # Large, bright ASC cluster
+- Non-valid   # Artifactual or noisy detection (excluded)
+```
+
+### Train Segmentation Model
+Open the relevant `train_[preview/nuclei/asc].py` script and execute the 
+workflow in sequence:
+- Generate patches: Set `run_patches = 1`
+- Annotate data: Set `run_annotate = 1`
+- Train model: Set `run_train = 1`
+
+### Train Classification Model
+Run the relevant `annotate_[nuclei/asc]_class.py` script to generate the 
+required annotations.
+Open the corresponding `train_[nuclei/asc]_class.py` script and execute the 
+remaining steps:
+- Generate patches: Set `run_patches = 1`
+- Train model: Set `run_train = 1`
 
 ## Comments
